@@ -1,8 +1,8 @@
 import { useState, useEffect, Suspense, lazy, Component } from 'react';
 import {
   ArrowLeft, BookOpen,
-  Settings, ImageIcon, PanelLeft, ChevronDown, Clock, Trash2, Home as HomeIcon,
-  Edit3, Palette
+  Settings, PanelLeft, ChevronDown, Clock, Trash2, Home as HomeIcon,
+  Edit3, Palette, NotebookPen, CalendarDays, Grid3X3
 } from 'lucide-react';
 import { BiTransferAlt, BiGame, BiDna} from 'react-icons/bi';
 import { FaSortAmountDown } from "react-icons/fa";
@@ -31,11 +31,13 @@ import DilutionCalculator from '@/components/calculators/DilutionCalculator';
 import ProteinConcCalculator from '@/components/calculators/ProteinConcCalculator';
 
 // Lazy loaded non-calculators and other tools
-const BufferCalculator = lazy(() => import('@/components/calculators/BufferCalculator'));
+const BufferMediumTool = lazy(() => import('@/components/tools/BufferMediumTool'));
+const UsefulTools = lazy(() => import('@/components/tools/UsefulTools'));
+const NotesTool = lazy(() => import('@/components/tools/NotesTool'));
+const AgendaTool = lazy(() => import('@/components/tools/AgendaTool'));
 const AIAssistant = lazy(() => import('@/components/calculators/AIAssistant'));
 const ProtocolLibrary = lazy(() => import('@/components/calculators/ProtocolLibrary'));
 const GelSimulator = lazy(() => import('@/components/calculators/GelSimulator'));
-const ImageAnnotator = lazy(() => import('./ImageAnnotator'));
 const PlasmidAnalyzer = lazy(() => import('@/components/calculators/PlasmidAnalyzer'));
 
 const SETTINGS_KEY = 'biba_bench_buddy_settings';
@@ -140,10 +142,6 @@ const TOOL_TABS = {
     { id: 'addto', label: 'Add to Volume' },
     { id: 'serial', label: 'Serial Dilution' },
   ],
-  buffer: [
-    { id: 'recipes', label: 'Buffer Recipes' },
-    { id: 'lysis', label: 'Custom Lysis Buffer' },
-  ],
   protein: [
     { id: 'standards', label: 'BCA assay' },
     { id: 'prep', label: 'SDS-PAGE Prep' },
@@ -165,23 +163,28 @@ const TOOL_GROUPS = [
     tools: [
       { id: 'gel', name: 'Gel Simulator', icon: FaSortAmountDown, gradient: 'from-blue-600 to-cyan-500' },
       { id: 'plasmid', name: 'Sequence Analyzer', icon: BiDna, gradient: 'from-teal-500 to-sky-500' },
-      { id: 'image-annotator', name: 'Image Annotator', icon: ImageIcon, gradient: 'from-green-500 to-blue-500' },
+      { id: 'plates', name: 'Plate Labeler', icon: Grid3X3, gradient: 'from-emerald-500 to-sky-500' },
     ],
   },
   {
-    id: 'protocols',
-    label: 'Other Tools',
+    id: 'general',
+    label: 'General',
     tools: [
-      { id: 'buffer', name: 'Buffers', icon: GoBeaker, gradient: 'from-orange-600 to-yellow-200' },
-      { id: 'protocols', name: 'Protocol Library', icon: BookOpen, gradient: 'from-yellow-400 to-red-600' },
+      { id: 'notes', name: 'Notes', icon: NotebookPen, direction: 'bg-gradient-to-br', gradient: 'from-pink-500 to-blue-500' },
+      { id: 'agenda', name: 'Agenda', icon: CalendarDays, direction: 'bg-gradient-to-tr', gradient: 'from-blue-500 to-pink-500' },
+      { id: 'protocols', name: 'Protocols', icon: BookOpen, direction: 'bg-gradient-to-bl', gradient: 'from-fuchsia-500 via-purple-500 to-blue-500' },
+      { id: 'buffer', name: 'Buffers', icon: GoBeaker, direction: 'bg-gradient-to-tl', gradient: 'from-blue-600 via-violet-500 to-pink-400' },
     ],
   },
 ];
 
+const HOME_LAB_TOOLS = TOOL_GROUPS[0].tools;
+const HOME_GENERAL_TOOLS = TOOL_GROUPS[1].tools;
+
 // ── All tool IDs to keep mounted ─────────────────────────────────────────────
 const ALL_IDS = [
   'digest', 'ligation', 'gibson', 'pcr', 'dilution', 'protein',
-  'buffer', 'protocols', 'ai', 'gel', 'plasmid', 'image-annotator',
+  'buffer', 'plates', 'notes', 'agenda', 'protocols', 'ai', 'gel', 'plasmid',
 ];
 
 // ── Custom tab colors ────────────────────────────────────────────────────────
@@ -213,7 +216,7 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
 
   const renderToolIcon = (tool) => (
     <div
-      className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${iconStyle ? '' : `bg-gradient-to-br ${tool.gradient}`}`}
+      className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${iconStyle ? '' : `${tool.direction || 'bg-gradient-to-br'} ${tool.gradient}`}`}
       style={iconStyle || {}}
     >
       <tool.icon className={`w-2.5 h-2.5 ${iconTextColor || 'text-white'}`} />
@@ -560,6 +563,28 @@ export default function Home() {
     };
   }, []);
 
+  // Accept both decimal separators app-wide. Number inputs normally reject a
+  // comma before React receives it, so normalize it at keydown level while
+  // preserving the current value and caret position.
+  useEffect(() => {
+    const normalizeDecimalKey = (event) => {
+      if (event.key !== ',') return;
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement)) return;
+      if (input.type !== 'number' && input.inputMode !== 'decimal') return;
+      event.preventDefault();
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      const next = `${input.value.slice(0, start)}.${input.value.slice(end)}`;
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, next);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      requestAnimationFrame(() => input.setSelectionRange?.(start + 1, start + 1));
+    };
+    window.addEventListener('keydown', normalizeDecimalKey, true);
+    return () => window.removeEventListener('keydown', normalizeDecimalKey, true);
+  }, []);
+
   useEffect(() => {
     if (active) {
       setVisitedIds(prev => {
@@ -808,7 +833,13 @@ export default function Home() {
       case 'dilution':
         return <DilutionCalculator {...calculatorProps} externalTab={activeTab['dilution']} onTabChange={t => handleSelectTab('dilution', t)} tabs={renderToolTabs('dilution-' + (activeTab['dilution'] || 'c1v1'))} />;
       case 'buffer':
-        return renderLazy(<BufferCalculator {...calculatorProps} externalTab={activeTab['buffer']} onTabChange={t => handleSelectTab('buffer', t)} tabs={renderToolTabs('buffer-' + (activeTab['buffer'] || 'recipes'))} />);
+        return renderLazy(<BufferMediumTool {...calculatorProps} />);
+      case 'plates':
+        return renderLazy(<UsefulTools {...calculatorProps} initialTool={id} />);
+      case 'notes':
+        return renderLazy(<NotesTool {...calculatorProps} />);
+      case 'agenda':
+        return renderLazy(<AgendaTool {...calculatorProps} />);
       case 'protein':
         return <ProteinConcCalculator {...calculatorProps} externalTab={activeTab['protein']} onTabChange={t => handleSelectTab('protein', t)} tabs={renderToolTabs('protein-' + (activeTab['protein'] || 'standards'))} />;
       case 'protocols':
@@ -817,8 +848,6 @@ export default function Home() {
         return renderLazy(<AIAssistant {...calculatorProps} />);
       case 'gel':
         return renderLazy(<GelSimulator {...calculatorProps} externalTab={activeTab['gel']} onTabChange={t => handleSelectTab('gel', t)} tabs={renderToolTabs('gel-' + (activeTab['gel'] || 'dna'))} />);
-      case 'image-annotator':
-        return renderLazy(<ImageAnnotator {...calculatorProps} tabs={renderToolTabs('image-annotator')} />);
       case 'plasmid':
         return renderLazy(<PlasmidAnalyzer {...calculatorProps} tabs={renderToolTabs('plasmid')} />);
       default:
@@ -867,11 +896,6 @@ export default function Home() {
         bg: isDark ? 'bg-teal-950/20 border-teal-900/30' : 'bg-teal-50/80 border-teal-100',
         activeTab: 'bg-teal-500 hover:bg-teal-600 text-white',
         plusBtn: isDark ? 'bg-teal-900/20 text-teal-300 hover:bg-teal-900/40' : 'bg-teal-100 hover:bg-teal-200 text-teal-700',
-      },
-      'image-annotator': {
-        bg: isDark ? 'bg-green-950/20 border-green-900/30' : 'bg-green-50/80 border-green-100',
-        activeTab: 'bg-green-500 hover:bg-green-600 text-white',
-        plusBtn: isDark ? 'bg-green-900/20 text-green-300 hover:bg-green-900/40' : 'bg-green-100 hover:bg-green-200 text-green-700',
       },
       buffer: {
         bg: isDark ? 'bg-orange-950/20 border-orange-900/30' : 'bg-orange-50/80 border-orange-100',
@@ -1136,41 +1160,34 @@ export default function Home() {
                 <ScienceJoke isDark={isDark} />
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Left Column: Calculators (3 columns, 2 rows) */}
-                <div className="flex flex-col space-y-4">
-                  <h3 className={`text-xs font-bold uppercase tracking-widest px-1 ${sectionLabelColor}`}>Calculators</h3>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
-                    {CALCULATORS.map(calc => (
-                      <button
-                        key={calc.id}
-                        onClick={() => { setActive(calc.id); setHistoryData(null); }}
-                        className={`group rounded-2xl p-4 text-center shadow-sm hover:shadow-lg transition-all duration-200 hover:-translate-y-1 flex flex-col items-center justify-center h-[138px] ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}
-                      >
-                        <div className={`inline-flex p-3 rounded-xl shadow-md mb-3 group-hover:scale-110 transition-transform ${iconStyle ? '' : `bg-gradient-to-br ${calc.gradient}`}`} style={iconStyle || {}}>
-                          <calc.icon className={`w-6 h-6 ${theme?.iconTextColor || 'text-white'}`} />
-                        </div>
-                        <p className={`text-sm sm:text-base font-semibold leading-tight mb-1 ${cardTextPrimary}`}>{calc.name}</p>
-                      </button>
-                    ))}
+              <div className="grid grid-cols-1 gap-8 min-[1080px]:grid-cols-[minmax(340px,.75fr)_minmax(600px,1.25fr)]">
+                <div className="grid content-start gap-6">
+                  <div className="flex flex-col space-y-4">
+                    <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>Calculators</h3>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
+                      {CALCULATORS.map(calc => (
+                        <button key={calc.id} onClick={() => { setActive(calc.id); setHistoryData(null); }} className={`group flex h-[124px] flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
+                          <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `bg-gradient-to-br ${calc.gradient}`}`} style={iconStyle || {}}><calc.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} /></div>
+                          <p className={`mb-1 text-sm font-semibold leading-tight sm:text-base ${cardTextPrimary}`}>{calc.name}</p>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Column: Lab & Protocols (Symmetrical rows) */}
-                <div className="flex flex-col space-y-5">
-                  {TOOL_GROUPS.map(group => (
-                    <div key={group.id} className="flex flex-col space-y-4">
-                      <h3 className={`text-xs font-bold uppercase tracking-widest px-1 ${sectionLabelColor}`}>{group.label}</h3>
-                      <div className={`grid gap-3 md:gap-4 ${group.id === 'lab' ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'}`}>
+                <div className="grid content-start gap-6">
+                  {[{ id: 'lab', label: 'Lab & Visualization', tools: HOME_LAB_TOOLS, columns: 'md:grid-cols-3' }, { id: 'general', label: 'General', tools: HOME_GENERAL_TOOLS, columns: 'md:grid-cols-4' }].map(group => (
+                    <div key={group.id} className="flex flex-col space-y-3">
+                      <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>{group.label}</h3>
+                      <div className={`grid grid-cols-2 gap-3 md:gap-4 ${group.columns}`}>
                         {group.tools.map(tool => (
-                          <button key={tool.id} onClick={() => { setActive(tool.id); setHistoryData(null); }}
-                            className={`group relative rounded-2xl p-4 text-center shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col items-center justify-center h-[120px] ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
-                            <div className={`inline-flex p-3 rounded-xl shadow-md mb-3 group-hover:scale-110 transition-transform ${iconStyle ? '' : `bg-gradient-to-br ${tool.gradient}`}`} style={iconStyle || {}}>
-                              <tool.icon className={`w-6 h-6 ${theme?.iconTextColor || 'text-white'}`} />
-                            </div>
-                            <p className={`text-sm sm:text-base font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</p>
-                          </button>
+                        <button key={tool.id} onClick={() => { setActive(tool.id); setHistoryData(null); }}
+                          className={`group flex h-[112px] min-w-0 flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
+                          <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `${tool.direction || 'bg-gradient-to-br'} ${tool.gradient}`}`} style={iconStyle || {}}>
+                            <tool.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} />
+                          </div>
+                          <p className={`w-full truncate whitespace-nowrap text-sm font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</p>
+                        </button>
                         ))}
                       </div>
                     </div>

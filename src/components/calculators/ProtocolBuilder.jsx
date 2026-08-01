@@ -59,7 +59,7 @@ function InlineVariableText({ text, variables = [], values = {}, onValueChange }
         type="text"
         inputMode="decimal"
         value={value}
-        onChange={event => onValueChange?.(variable.id, event.target.value)}
+        onChange={event => onValueChange?.(variable.id, event.target.value.replace(/,/g, '.'))}
         onClick={event => event.stopPropagation()}
         aria-label={variable.label}
         title={variable.label}

@@ -2,8 +2,11 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-const Input = React.forwardRef(({ className, type, onChange, onKeyDown, onPaste, ...props }, ref) => {
+const Input = React.forwardRef(({ className, type, onChange, onKeyDown, onPaste, inputMode, ...props }, ref) => {
   const isNumberInput = type === "number";
+  // Native number inputs can clear their value before React receives a comma.
+  // Render them as decimal text inputs so both locale separators remain editable.
+  const renderedType = isNumberInput ? "text" : type;
 
   const getSelection = (target) => {
     try {
@@ -38,11 +41,6 @@ const Input = React.forwardRef(({ className, type, onChange, onKeyDown, onPaste,
   };
 
   const handleKeyDown = (event) => {
-    if (isNumberInput && event.key === ",") {
-      event.preventDefault();
-      insertDecimalPoint(event.currentTarget);
-      return;
-    }
     onKeyDown?.(event);
   };
 
@@ -77,7 +75,9 @@ const Input = React.forwardRef(({ className, type, onChange, onKeyDown, onPaste,
 
   return (
     (<input
-      type={type}
+      type={renderedType}
+      inputMode={isNumberInput ? "decimal" : inputMode}
+      data-number-input={isNumberInput || undefined}
       className={cn(
         "flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
         className

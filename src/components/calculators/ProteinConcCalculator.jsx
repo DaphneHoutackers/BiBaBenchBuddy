@@ -80,60 +80,6 @@ const DEFAULT_STD_CONCS = [0, 0.25, 0.5, 1, 2, 5, 10, 20, 40];
 // BSA stock = 2 mg/mL = 2000 µg/mL → µL needed per 1 mL WR = conc / 2000 * 1000
 const bsaVolForStd = (conc) => (conc / 2000 * 1000); // µL per 1 mL WR
 
-function normalizeDecimal(value) {
-  return String(value || '')
-    .trim()
-    .replace(/(\d),(\d)/g, '$1.$2');
-}
-
-function parseSampleBatchInput(input) {
-  const lines = String(input || '')
-    .split('\n')
-    .map(line => line.trim())
-    .filter(Boolean);
-
-  const parsed = [];
-
-  for (const line of lines) {
-    const normalizedLine = normalizeDecimal(line);
-
-    // Format: "A1-A #1: 0.609" or "A1-A #1 = 0.609"
-    const idValueMatch = normalizedLine.match(/^(.+?)\s*[:=]\s*(-?\d+(?:\.\d+)?)\s*$/);
-
-    if (idValueMatch) {
-      parsed.push({
-        name: idValueMatch[1].trim(),
-        abs: idValueMatch[2].trim(),
-      });
-      continue;
-    }
-
-    // Format without : or =, take last number as absorbance
-    // Example: "A1-A #1 0.609"
-    const trailingValueMatch = normalizedLine.match(/^(.+?)\s+(-?\d+(?:\.\d+)?)\s*$/);
-
-    if (trailingValueMatch) {
-      parsed.push({
-        name: trailingValueMatch[1].trim(),
-        abs: trailingValueMatch[2].trim(),
-      });
-      continue;
-    }
-
-    // Only absorbance value
-    const valueOnlyMatch = normalizedLine.match(/^-?\d+(?:\.\d+)?$/);
-
-    if (valueOnlyMatch) {
-      parsed.push({
-        name: null,
-        abs: normalizedLine,
-      });
-    }
-  }
-
-  return parsed;
-}
-
 export default function ProteinConcCalculator({ externalTab, onTabChange, historyData, isActive, tabs }) {
   const { addHistoryItem } = useHistory();
   const sessionId = useRef(makeId());
@@ -148,8 +94,6 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   const [wrVolume, setWrVolume] = useState('1'); // mL
   const [sampleVolInWR, setSampleVolInWR] = useState('10'); // µL
   const [standards, setStandards] = useState(DEFAULT_STD_CONCS.map((c, i) => ({ id: i + 1, conc: c, abs: '' })));
-  const [batchConcInput, setBatchConcInput] = useState('');
-  const [batchAbsInput, setBatchAbsInput] = useState('');
   const [unknowns, setUnknowns] = useState([
     { id: 1, name: 'Sample 1', abs: '' },
     { id: 2, name: 'Sample 2', abs: '' },
@@ -158,7 +102,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   const [unknownResults, setUnknownResults] = useState([]);
   const [copiedStd, setCopiedStd] = useState(false);
   const [copiedSamples, setCopiedSamples] = useState(false);
-  const [batchSampleAbsInput, setBatchSampleAbsInput] = useState('');
+  const [rowMenu, setRowMenu] = useState(null);
   const [copiedPrep, setCopiedPrep] = useState(false);
 
   // SDS-PAGE prep
@@ -255,10 +199,11 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
       .map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }))
       .filter(p => !isNaN(p.x) && !isNaN(p.y) && String(standards.find(s => s.x === p.x)?.abs) !== '');
     const validPoints = standards
-      .filter(s => s.abs !== '' && !isNaN(parseFloat(s.abs)))
+      .filter(s => s.abs !== '' && !isNaN(parseFloat(s.abs)) && !isNaN(parseFloat(s.conc)))
       .map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }));
     if (validPoints.length < 2) { setRegression(null); return; }
-    setRegression(linearRegression(validPoints));
+    const nextRegression = linearRegression(validPoints);
+    setRegression(nextRegression && Object.values(nextRegression).every(Number.isFinite) ? nextRegression : null);
   }, [standards]);
 
   const addStandard = () => {
@@ -266,50 +211,42 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
     setStandards([...standards, { id, conc: '', abs: '' }]);
   };
 
-  const applyBatchConcs = () => {
-    const raw = batchConcInput.replace(/(\d)[,](\d)/g, '$1.$2');
-    const vals = raw.split(/[\n\t]+|,(?!\d)/).map(s => s.trim()).filter(Boolean);
-    if (!vals.length) return;
-    const next = vals.map((v, i) => ({ id: i + 1, conc: v, abs: standards[i]?.abs || '' }));
-    setStandards(next);
-    setBatchConcInput('');
-  };
-
-  const applyBatchAbs = () => {
-    // Accept both comma and newline as separators; replace comma-decimal (e.g. 0,123) with dot
-    const raw = batchAbsInput.replace(/(\d)[,](\d)/g, '$1.$2');
-    const vals = raw.split(/[\n\t]+|,(?!\d)/).map(s => s.trim()).filter(Boolean);
-    if (!vals.length) return;
-    setStandards(prev => prev.map((s, i) => ({ ...s, abs: vals[i] !== undefined ? vals[i] : s.abs })));
-    setBatchAbsInput('');
-  };
-
-  const applyBatchSampleAbs = () => {
-    const parsed = parseSampleBatchInput(batchSampleAbsInput);
-    if (!parsed.length) return;
-
-    setUnknowns(prev => {
-      const extended = [...prev];
-
-      while (extended.length < parsed.length) {
-        const id = extended.length ? Math.max(...extended.map(u => u.id)) + 1 : 1;
-        extended.push({ id, name: `Sample ${id}`, abs: '' });
-      }
-
-      return extended.map((u, i) => {
-        const item = parsed[i];
-        if (!item) return u;
-
-        return {
-          ...u,
-          name: item.name ? item.name : u.name,
-          abs: item.abs !== undefined ? item.abs : u.abs,
-        };
-      });
+  const pastedValues = text => text.split(/\r?\n|\t/).map(v => v.trim()).filter(Boolean).map(v => v.replace(',', '.'));
+  const pasteStandards = (event, start, field) => {
+    const values = pastedValues(event.clipboardData.getData('text'));
+    if (values.length < 2) return;
+    event.preventDefault();
+    setStandards(previous => {
+      const next = previous.map(row => ({ ...row }));
+      while (next.length < start + values.length) next.push({ id: makeId(), conc: '', abs: '' });
+      values.forEach((value, offset) => { next[start + offset][field] = value; });
+      return next;
     });
-
-    setBatchSampleAbsInput('');
   };
+  const pasteSamples = (event, start, field) => {
+    const values = pastedValues(event.clipboardData.getData('text'));
+    if (values.length < 2) return;
+    event.preventDefault();
+    setUnknowns(previous => {
+      const next = previous.map(row => ({ ...row }));
+      while (next.length < start + values.length) next.push({ id: makeId(), name: `Sample ${next.length + 1}`, abs: '' });
+      values.forEach((value, offset) => { next[start + offset][field] = value; });
+      return next;
+    });
+  };
+  const insertRowAfter = () => {
+    if (!rowMenu) return;
+    if (rowMenu.type === 'standard') setStandards(rows => [...rows.slice(0, rowMenu.index + 1), { id: makeId(), conc: '', abs: '' }, ...rows.slice(rowMenu.index + 1)]);
+    else setUnknowns(rows => [...rows.slice(0, rowMenu.index + 1), { id: makeId(), name: `Sample ${rows.length + 1}`, abs: '' }, ...rows.slice(rowMenu.index + 1)]);
+    setRowMenu(null);
+  };
+  const deleteContextRow = () => {
+    if (!rowMenu) return;
+    if (rowMenu.type === 'standard' && standards.length > 2) setStandards(rows => rows.filter((_, index) => index !== rowMenu.index));
+    if (rowMenu.type === 'sample' && unknowns.length > 1) setUnknowns(rows => rows.filter((_, index) => index !== rowMenu.index));
+    setRowMenu(null);
+  };
+  useEffect(() => { const close = () => setRowMenu(null); window.addEventListener('click', close); return () => window.removeEventListener('click', close); }, []);
 
   // Unknown results
   useEffect(() => {
@@ -417,14 +354,14 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
         {tabs}
 
         {/* ─── STANDARDS ─── */}
-        <TabsContent value="standards" className="mt-3 space-y-4">
-          <Card className="border-0 shadow-sm bg-white dark:bg-white/10">
+        <TabsContent value="standards" className="mt-3 grid gap-4 min-[1180px]:grid-cols-2">
+          <Card className="border-0 shadow-sm bg-white dark:bg-white/10 min-[1180px]:col-span-2">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-medium text-slate-800 dark:text-slate-200">Assay Setup</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="w-full space-y-2 sm:w-60">
                   <Label className="text-sm font-medium text-slate-600 dark:text-slate-200">Working reagent (WR) volume</Label>
                   <div className="flex items-center gap-2">
                     <NumInput value={wrVolume} onChange={e => setWrVolume(e.target.value)} placeholder="1" className="border-slate-200 dark:border-slate-700 h-9 text-sm" />
@@ -432,7 +369,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                   </div>
                 </div>
 
-                <div className="space-y-2">
+                <div className="w-full space-y-2 sm:w-60">
                   <Label className="text-sm font-medium text-slate-600 dark:text-slate-200">Sample volume added to WR</Label>
                   <div className="flex items-center gap-2">
                     <NumInput value={sampleVolInWR} onChange={e => setSampleVolInWR(e.target.value)} placeholder="10" className="border-slate-200 dark:border-slate-700 h-9 text-sm" />
@@ -453,9 +390,9 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
           </Card>
 
           {/* Standards table */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="contents">
             {/* Standards table */}
-            <Card className="lg:col-span-2 border-0 shadow-sm bg-white dark:bg-white/10">
+            <Card className="order-1 border-0 shadow-sm bg-white dark:bg-white/10">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">a) Standards Table</CardTitle>
@@ -470,64 +407,36 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
               </CardHeader>
               <CardContent className="space-y-3">
                 <div ref={standardsTableRef} className="space-y-2 bg-white dark:bg-slate-900 p-1 rounded-xl">
-                  {/* Batch paste */}
-                  <div className="grid sm:grid-cols-2 gap-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-slate-700 dark:text-slate-200">Paste concentrations</Label>
-                      <div className="flex gap-1">
-                        <textarea value={batchConcInput} onChange={e => setBatchConcInput(e.target.value)}
-                          className="flex-1 h-14 text-xs font-mono border border-slate-200 dark:border-slate-700 rounded-md p-1.5 resize-none" placeholder="0, 0.25, 0.5, 1, 2..." />
-                        <button onClick={applyBatchConcs} className="px-2 py-1 bg-pink-600 text-white text-xs rounded-md hover:bg-pink-700 dark:text-slate-200">Apply</button>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-slate-700 dark:text-slate-200">Paste absorbances</Label>
-                      <div className="flex gap-1">
-                        <textarea value={batchAbsInput} onChange={e => setBatchAbsInput(e.target.value)}
-                          className="flex-1 h-14 text-xs font-mono border border-slate-200 dark:border-slate-700 rounded-md p-1.5 resize-none" placeholder="0.05, 0.12, 0.22..." />
-                        <button onClick={applyBatchAbs} className="px-2 py-1 bg-pink-600 text-white text-xs rounded-md hover:bg-pink-700">Apply</button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <table className="w-full text-xs">
+                  <p className="px-2 text-[11px] text-slate-400">Tip: paste a spreadsheet column directly into the first editable cell.</p>
+                  <div><table className="mx-auto w-full max-w-[760px] table-fixed text-xs">
                     <thead>
                       <tr className="bg-pink-50">
-                        <th className="text-left py-1 px-2 font-bold text-slate-700 dark:text-slate-200 w-2/10">Std (µg/mL)</th>
-                        <th className="text-center py-1 px-1 font-bold text-slate-700 dark:text-slate-200 w-4/10">2mg/mL BSA (µL) per {wrVolume}mL WR</th>
-                        <th className="text-center py-1 px-2 font-bold text-slate-700 dark:text-slate-200 w-4/10">Absorbance (A<sub>562</sub>)</th>
-                        <th className="py-1 px-1 w-1/10"></th>
+                        <th className="w-[24%] py-1 px-1 text-center font-bold text-slate-700 dark:text-slate-200">Std (µg/mL)</th>
+                        <th className="w-[46%] py-1 px-1 text-center font-bold text-slate-700 dark:text-slate-200">2mg/mL BSA (µL) per {wrVolume}mL WR</th>
+                        <th className="w-[30%] py-1 px-1 text-center font-bold text-slate-700 dark:text-slate-200">Absorbance (A<sub>562</sub>)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {standards.map((s, i) => {
                         const c = parseFloat(s.conc);
                         return (
-                          <tr key={s.id} className="border-b border-slate-100 dark:border-slate-800">
-                            <td className="py-1 px-2 text-right w-2/10">
-                              <NumInput value={s.conc} onChange={e => setStandards(standards.map(x => x.id === s.id ? { ...x, conc: e.target.value } : x))}
-                                className="w-24 h-7 text-sm border-slate-200 dark:border-slate-700" placeholder="µg/mL" />
+                          <tr key={s.id} onContextMenu={e=>{e.preventDefault();setRowMenu({type:'standard',index:i,x:e.clientX,y:e.clientY})}} className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="py-1 px-2 text-center">
+                              <NumInput value={s.conc} onPaste={e=>pasteStandards(e,i,'conc')} onChange={e => setStandards(standards.map(x => x.id === s.id ? { ...x, conc: e.target.value } : x))}
+                                className="h-7 w-full border-0 bg-transparent px-0 text-center text-sm shadow-none focus-visible:ring-0" placeholder="µg/mL" />
                             </td>
-                            <td className="py-1 px-10 text-left font-roboto text-pink-700 text-sm w-4/10">
+                            <td className="py-1 px-2 text-center font-roboto text-pink-700 text-sm">
                               {!isNaN(c) ? (c === 0 ? '0' : formatNumber((bsaVolForStd(c) * wrVol).toFixed(3))) : '—'}
                             </td>
-                            <td className="py-1 px-4 text-right w-4/10">
-                              <NumInput value={s.abs} onChange={e => setStandards(standards.map(x => x.id === s.id ? { ...x, abs: e.target.value } : x))}
-                                className="w-full h-7 text-sm text-right border-slate-200 dark:border-slate-700" placeholder="0.000" />
-                            </td>
-                            <td className="py-1 px-1 w-8">
-                              {standards.length > 2 && (
-                                <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-300 hover:text-red-400"
-                                  onClick={() => setStandards(standards.filter(x => x.id !== s.id))}>
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              )}
+                            <td className="py-1 px-1 text-center">
+                              <NumInput value={s.abs} onPaste={e=>pasteStandards(e,i,'abs')} onChange={e => setStandards(standards.map(x => x.id === s.id ? { ...x, abs: e.target.value } : x))}
+                                className="h-7 w-full border-0 bg-transparent px-0 text-center text-sm shadow-none focus-visible:ring-0" placeholder="0.000" />
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
-                  </table>
+                  </table></div>
                 </div>
                 <button onClick={addStandard} className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:bg-slate-800/50 px-2 py-1.5 rounded-lg w-full justify-center mt-1">
                   <Plus className="w-3 h-3" /> Add Standard
@@ -536,16 +445,37 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
             </Card>
 
             {/* Regression */}
-            <Card className="lg:col-span-1 border-0 shadow-sm bg-gradient-to-br from-pink-50 to-rose-50 flex flex-col h-full">
+            <Card className="order-3 border-0 shadow-sm bg-gradient-to-br from-pink-50 to-rose-50 flex flex-col h-full min-[1180px]:col-start-1 min-[1180px]:row-start-3">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200 flex items-center gap-2">
                   <BsGraphUpArrow className="w-4 h-4 text-pink-600" /> Standard Curve
                 </CardTitle>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col justify-between">
+              <CardContent className="grid flex-1 items-stretch gap-4 sm:grid-cols-2">
                 {regression ? (
                   <>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex min-w-0 flex-col items-center justify-center rounded-xl border border-pink-100/70 bg-white/45 p-3">
+                      <h4 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Standard Curve Plot</h4>
+                      <div className="w-full bg-white/80 dark:bg-slate-900/90 rounded-xl p-2 border border-pink-100 shadow-inner relative group overflow-hidden max-w-[360px] aspect-[1.2/1]">
+                        <svg viewBox="0 0 100 80" className="w-full h-full overflow-visible">
+                          <line x1="15" y1="10" x2="15" y2="65" stroke="#e2e8f0" strokeWidth="0.5" />
+                          <line x1="15" y1="65" x2="95" y2="65" stroke="#e2e8f0" strokeWidth="0.5" />
+                          <text x="55" y="76" textAnchor="middle" className="text-[5px] fill-slate-400 font-medium">Conc (µg/mL)</text>
+                          <text x="6" y="37.5" textAnchor="middle" transform="rotate(-90 6,37.5)" className="text-[5px] fill-slate-400 font-medium">Absorbance</text>
+                          {(() => {
+                            const validPoints = standards.filter(s => s.abs !== '' && !isNaN(parseFloat(s.abs)) && !isNaN(parseFloat(s.conc))).map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }));
+                            if (validPoints.length < 2) return null;
+                            const minX = Math.min(...validPoints.map(p => p.x)),maxX = Math.max(...validPoints.map(p => p.x)),maxY = Math.max(...validPoints.map(p => p.y)) * 1.1;
+                            const scaleX = x => 15 + ((x - minX) / (maxX - minX || 1)) * 80;
+                            const scaleY = y => Number.isFinite(y) && Number.isFinite(maxY) && maxY > 0 ? 65 - (y / maxY) * 55 : 65;
+                            const x1 = minX,y1 = regression.slope * x1 + regression.intercept,x2 = maxX,y2 = regression.slope * x2 + regression.intercept;
+                            return <><line x1={scaleX(x1)} y1={scaleY(y1)} x2={scaleX(x2)} y2={scaleY(y2)} stroke="#db2777" strokeWidth="1" strokeDasharray="2,2" />{validPoints.map((p,idx)=><circle key={idx} cx={scaleX(p.x)} cy={scaleY(p.y)} r="1.5" fill="#ec4899" className="drop-shadow-sm"/>)}</>;
+                          })()}
+                        </svg>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2 rounded-xl border border-pink-100/70 bg-white/45 p-3">
                       <div className="flex justify-between items-center bg-white/60 dark:bg-slate-900/40 rounded-lg p-2 border border-pink-100/50">
                         <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Slope (m)</span>
                         <span className="text-sm font-bold text-pink-700">{regression.slope.toFixed(6)}</span>
@@ -562,7 +492,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                       </div>
                       
                       {/* Formula directly under R2 */}
-                      <div className="mt-1 py-1 flex flex-col items-center">
+                      <div className="mt-1 flex flex-1 flex-col items-center justify-center rounded-xl bg-white/45 px-3 py-4">
                         <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium">
                           <span className="text-[14px]">Conc =</span>
                           <div className="flex flex-col items-center">
@@ -577,62 +507,6 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                       </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col items-center justify-center py-4">
-                      <h4 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Standard Curve Plot</h4>
-                      <div className="w-full bg-white/80 dark:bg-slate-900/90 rounded-xl p-2 border border-pink-100 shadow-inner relative group overflow-hidden max-w-[360px] aspect-[1.2/1]">
-                        <svg viewBox="0 0 100 80" className="w-full h-full overflow-visible">
-                          {/* Grid lines */}
-                          <line x1="15" y1="10" x2="15" y2="65" stroke="#e2e8f0" strokeWidth="0.5" />
-                          <line x1="15" y1="65" x2="95" y2="65" stroke="#e2e8f0" strokeWidth="0.5" />
-                          
-                          {/* Axis Labels */}
-                          <text x="55" y="76" textAnchor="middle" className="text-[5px] fill-slate-400 font-medium">Conc (µg/mL)</text>
-                          <text x="6" y="37.5" textAnchor="middle" transform="rotate(-90 6,37.5)" className="text-[5px] fill-slate-400 font-medium">Absorbance</text>
-
-                          {/* Trendline */}
-                          {(() => {
-                            const validPoints = standards
-                              .filter(s => s.abs !== '' && !isNaN(parseFloat(s.abs)) && !isNaN(parseFloat(s.conc)))
-                              .map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }));
-                            
-                            if (validPoints.length < 2) return null;
-                            
-                            const minX = Math.min(...validPoints.map(p => p.x));
-                            const maxX = Math.max(...validPoints.map(p => p.x));
-                            const maxY = Math.max(...validPoints.map(p => p.y)) * 1.1;
-
-                            // Scale within 15-95 (x) and 10-65 (y)
-                            const scaleX = x => 15 + ((x - minX) / (maxX - minX || 1)) * 80;
-                            const scaleY = y => 65 - (y / maxY) * 55;
-
-                            const x1 = minX;
-                            const y1 = regression.slope * x1 + regression.intercept;
-                            const x2 = maxX;
-                            const y2 = regression.slope * x2 + regression.intercept;
-
-                            return (
-                              <>
-                                <line 
-                                  x1={scaleX(x1)} y1={scaleY(y1)} 
-                                  x2={scaleX(x2)} y2={scaleY(y2)} 
-                                  stroke="#db2777" strokeWidth="1" strokeDasharray="2,2" 
-                                />
-                                {validPoints.map((p, idx) => (
-                                  <circle 
-                                    key={idx} 
-                                    cx={scaleX(p.x)} 
-                                    cy={scaleY(p.y)} 
-                                    r="1.5" 
-                                    fill="#ec4899" 
-                                    className="drop-shadow-sm"
-                                  />
-                                ))}
-                              </>
-                            );
-                          })()}
-                        </svg>
-                      </div>
-                    </div>
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-center p-6 bg-white/40 rounded-xl border border-dashed border-pink-200">
@@ -644,7 +518,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
           </div>
 
           {/* b) Samples table */}
-          <Card className="border-0 shadow-sm bg-white dark:bg-white/10">
+          <Card className="order-2 border-0 shadow-sm bg-white dark:bg-white/10 min-[1180px]:col-start-2 min-[1180px]:row-start-2">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">b) Samples Table</CardTitle>
@@ -658,48 +532,31 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
-              <div ref={samplesTableRef} className="space-y-2 bg-white dark:bg-slate-900 p- rounded-xl">
-              {/* Batch paste for samples */}
-              <div className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                <Label className="text-xs text-slate-700 dark:text-slate-200">Paste sample absorbances, optionally with sample ID (comma/newline separated)</Label>
-                <div className="flex gap-1 mt-1">
-                  <textarea
-                    value={batchSampleAbsInput}
-                    onChange={e => setBatchSampleAbsInput(e.target.value)}
-                    className="flex-1 h-20 text-xs font-mono border border-slate-200 dark:border-slate-700 rounded-md p-1.5 resize-none"
-                    placeholder={`Example:  
-Sample A: 0,609 
-Sample B: 0,479 
-or only: 
-0,609 
-0,479`}
-                  />
-                  <button onClick={applyBatchSampleAbs} className="px-2 py-8 bg-pink-600 text-white text-xs rounded-md hover:bg-pink-700 self-start dark:text-slate-200">Apply</button>
-                </div>
-              </div>
-              <table className="w-full text-sm">
+              <div ref={samplesTableRef} className="space-y-2 rounded-xl bg-white p-1 dark:bg-slate-900">
+              <p className="px-2 text-[11px] text-slate-400">Paste names or absorbances as a column; rows are added automatically.</p>
+              <div><table className="mx-auto w-full max-w-[900px] table-fixed text-sm">
                 <thead>
                   <tr className="bg-pink-50">
-                    <th className="text-left py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Sample ID</th>
-                    <th className="text-center py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Absorbance</th>
-                    <th className="text-right py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Conc in WR (µg/mL)</th>
-                    <th className="text-right py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Lysate Conc (ng/µL)</th>
-                    <th className="py-2 px-2"></th>
+                    <th className="w-[24%] py-2 px-1 text-left font-bold text-slate-700 dark:text-slate-200">Sample ID</th>
+                    <th className="w-[18%] py-2 px-1 text-center font-bold text-slate-700 dark:text-slate-200">Absorbance</th>
+                    <th className="w-[24%] py-2 px-1 text-center font-bold text-slate-700 dark:text-slate-200">Conc in WR (µg/mL)</th>
+                    <th className="w-[27%] py-2 px-1 text-center font-bold text-slate-700 dark:text-slate-200">Lysate Conc (ng/µL)</th>
+                    <th className="w-[7%] py-2 px-1"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {unknowns.map((u, i) => {
                     const res = unknownResults[i];
                     return (
-                      <tr key={u.id} className="border-b border-slate-100 dark:border-slate-800">
+                      <tr key={u.id} onContextMenu={e=>{e.preventDefault();setRowMenu({type:'sample',index:i,x:e.clientX,y:e.clientY})}} className="border-b border-slate-100 dark:border-slate-800">
                         <td className="py-1.5 px-3">
-                          <Input value={u.name} onChange={e => setUnknowns(unknowns.map(x => x.id === u.id ? { ...x, name: e.target.value } : x))}
-                            className="h-6 w-28 text-sm border-slate-200 dark:border-slate-700" />
+                          <Input value={u.name} onPaste={e=>pasteSamples(e,i,'name')} onChange={e => setUnknowns(unknowns.map(x => x.id === u.id ? { ...x, name: e.target.value } : x))}
+                            className="h-7 w-full border-0 bg-transparent px-0 text-sm shadow-none focus-visible:ring-0" />
                         </td>
                         <td className="py-1.5 px-3 text-right">
-                          <NumInput value={u.abs} placeholder="0.000"
+                          <NumInput value={u.abs} placeholder="0.000" onPaste={e=>pasteSamples(e,i,'abs')}
                             onChange={e => setUnknowns(unknowns.map(x => x.id === u.id ? { ...x, abs: e.target.value } : x))}
-                            className="w-24 h-6 text-sm text-right border-slate-200 dark:border-slate-700 ml-auto" />
+                            className="ml-auto h-7 w-full border-0 bg-transparent px-0 text-right text-sm shadow-none focus-visible:ring-0" />
                         </td>
                         <td className="py-1.5 px-3 text-right font-bold text-pink-700">
                           {res?.concInWR ? formatNumber(res.concInWR) : '—'}
@@ -723,7 +580,7 @@ or only:
                     );
                   })}
                 </tbody>
-              </table>
+              </table></div>
               </div>
               <button onClick={() => {
                 const id = Math.max(...unknowns.map(u => u.id)) + 1;
@@ -852,6 +709,10 @@ or only:
           )}
         </TabsContent>
       </Tabs>
+      {rowMenu && <div className="fixed z-[120] w-52 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-xl" style={{left:rowMenu.x,top:rowMenu.y}} onClick={e=>e.stopPropagation()}>
+        <button onClick={insertRowAfter} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-700 hover:bg-pink-50"><Plus className="h-4 w-4"/>Add {rowMenu.type} below</button>
+        <button onClick={deleteContextRow} disabled={(rowMenu.type==='standard'&&standards.length<=2)||(rowMenu.type==='sample'&&unknowns.length<=1)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-600 hover:bg-red-50 disabled:opacity-40"><Trash2 className="h-4 w-4"/>Delete {rowMenu.type}</button>
+      </div>}
     </div>
   );
 }

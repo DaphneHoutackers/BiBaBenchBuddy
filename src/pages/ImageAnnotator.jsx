@@ -3,6 +3,7 @@ import { useHistory } from '@/context/HistoryContext';
 import MacColorPicker from '@/components/shared/MacColorPicker';
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   MousePointer, Type, ArrowRight, Minus, Square, Circle, Trash2, Download,
   Upload, RotateCcw, Crop, Plus, Check, X, Star, ChevronDown, Undo, Redo,
@@ -847,7 +848,7 @@ export default function ImageAnnotator({ historyData }) {
           <DropContent onClose={()=>{}}>
             <p className="text-xs font-semibold text-slate-600 mb-1.5">Lane Labels</p>
             <div className="flex gap-1.5 items-center">
-              <input type="number" min="1" value={laneCountInput} onChange={e=>setLaneCountInput(e.target.value)}
+              <Input type="number" min="1" value={laneCountInput} onChange={e=>setLaneCountInput(e.target.value)}
                 placeholder="# lanes" className="flex-1 border border-slate-200 rounded px-2 py-1 text-xs" />
               <button onClick={addLaneLabels}
                 className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 whitespace-nowrap">
@@ -891,7 +892,7 @@ export default function ImageAnnotator({ historyData }) {
             </label>
             <label className="flex items-center gap-1.5 text-xs text-slate-500">
               Size
-              <input type="number" min="7" max="24" value={band.labelFontSize||11}
+              <Input type="number" min="7" max="24" value={band.labelFontSize||11}
                 onChange={e=>setFloatItems(prev=>prev.map(x=>x.id===editingBandId?{...x,labelFontSize:+e.target.value}:x))}
                 className="w-14 border border-slate-200 rounded px-1.5 py-0.5 text-xs" />
             </label>

@@ -75,6 +75,30 @@
   }
 }
 
+/* Notes editor: native left-to-right editing without controlled DOM rewrites. */
+.note-editor { direction: ltr; unicode-bidi: plaintext; }
+.note-editor h1 { margin: .35em 0; font-size: 1.85rem; line-height: 1.2; font-weight: 750; }
+.note-editor h2 { margin: .45em 0; font-size: 1.45rem; line-height: 1.25; font-weight: 700; }
+.note-editor h3 { margin: .55em 0; font-size: 1.15rem; line-height: 1.3; font-weight: 700; }
+.note-editor p { min-height: 1.5em; margin: .15em 0; }
+.note-editor ul:not([data-checklist]) { list-style: disc; padding-left: 1.5rem; }
+.note-editor ol { list-style: decimal; padding-left: 1.5rem; }
+.note-editor li { margin: .1rem 0; }
+.note-editor ul[data-checklist] { list-style: none; padding-left: .15rem; }
+.note-editor ul[data-checklist] li { display: flex; align-items: flex-start; gap: .5rem; min-height: 1.6rem; }
+.note-editor ul[data-checklist] input { margin-top: .28rem; accent-color: #db2777; }
+.note-editor ul[data-checklist] span { min-width: 1rem; flex: 1; outline: none; }
+.note-editor blockquote { margin: .45rem 0; border-left: 3px solid #cbd5e1; padding-left: .85rem; color: #64748b; }
+.note-editor a { color: #db2777; text-decoration: underline; text-underline-offset: 2px; }
+.note-code { position: relative; margin: .65rem 0; border: 1px solid #e2e8f0; border-radius: .65rem; background: #f1f5f9; }
+.note-code pre { margin: 0; min-height: 3rem; overflow: auto; padding: .9rem 3rem .9rem .9rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; outline: none; }
+.note-code button { position: absolute; right: .45rem; top: .45rem; z-index: 2; opacity: 0; border: 1px solid #cbd5e1; border-radius: .4rem; background: white; padding: .2rem .45rem; font-size: .65rem; color: #475569; transition: opacity .15s; }
+.note-code:hover button { opacity: 1; }
+.note-divider { position: relative; margin: .7rem 0; padding: .3rem 0; }
+.note-divider hr { border: 0; border-top: 1px solid #cbd5e1; }
+.note-divider button { position: absolute; right: 0; top: -.45rem; opacity: 0; height: 1.4rem; width: 1.4rem; border-radius: 999px; background: white; color: #ef4444; box-shadow: 0 1px 5px rgb(15 23 42 / .18); }
+.note-divider:hover button { opacity: 1; }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

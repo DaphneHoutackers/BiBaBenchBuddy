@@ -55,6 +55,31 @@ const CopyImageButton = forwardRef(({ targetRef, label = "Copy Image", ...props 
                 el.style.width = `${scrollWidth}px`;
                 el.style.maxWidth = 'none';
               });
+
+              // html2canvas renders native input text on a different baseline than
+              // Chromium. Replace inputs in the cloned capture only with a visual
+              // equivalent so exported values stay centered and never get clipped.
+              clonedTarget.querySelectorAll('input').forEach(input => {
+                const style = clonedDoc.defaultView.getComputedStyle(input);
+                const replacement = clonedDoc.createElement('span');
+                replacement.textContent = input.value || input.placeholder || '';
+                replacement.style.display = 'flex';
+                replacement.style.alignItems = 'center';
+                replacement.style.justifyContent = style.textAlign === 'right' ? 'flex-end' : style.textAlign === 'center' ? 'center' : 'flex-start';
+                replacement.style.boxSizing = 'border-box';
+                replacement.style.width = `${input.getBoundingClientRect().width}px`;
+                replacement.style.height = `${input.getBoundingClientRect().height}px`;
+                replacement.style.padding = style.padding;
+                replacement.style.border = style.border;
+                replacement.style.borderRadius = style.borderRadius;
+                replacement.style.background = style.backgroundColor;
+                replacement.style.color = input.value ? style.color : '#94a3b8';
+                replacement.style.font = style.font;
+                replacement.style.lineHeight = '1';
+                replacement.style.whiteSpace = 'nowrap';
+                replacement.style.overflow = 'hidden';
+                input.replaceWith(replacement);
+              });
             }
           }
         }).then(canvas => {
