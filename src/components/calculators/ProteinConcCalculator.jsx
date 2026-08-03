@@ -80,7 +80,7 @@ const DEFAULT_STD_CONCS = [0, 0.25, 0.5, 1, 2, 5, 10, 20, 40];
 // BSA stock = 2 mg/mL = 2000 µg/mL → µL needed per 1 mL WR = conc / 2000 * 1000
 const bsaVolForStd = (conc) => (conc / 2000 * 1000); // µL per 1 mL WR
 
-export default function ProteinConcCalculator({ externalTab, onTabChange, historyData, isActive, tabs }) {
+export default function ProteinConcCalculator({ externalTab, onTabChange, historyData, isActive, tabs, linkedAssaySamples, assayTabIndex, onAssaySamplesChange }) {
   const { addHistoryItem } = useHistory();
   const sessionId = useRef(makeId());
   const standardsTableRef = useRef(null);
@@ -109,6 +109,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   const [proteinLoad, setProteinLoad] = useState('15'); // µg
   const [sampleBufferX, setSampleBufferX] = useState('6'); // 6×
   const [prepTotalVol, setPrepTotalVol] = useState('40'); // µL
+  const [prepSamples, setPrepSamples] = useState([]);
 
   const [isRestoring, setIsRestoring] = useState(false);
 
@@ -125,6 +126,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
         if (d.proteinLoad !== undefined) setProteinLoad(d.proteinLoad);
         if (d.sampleBufferX !== undefined) setSampleBufferX(d.sampleBufferX);
         if (d.prepTotalVol !== undefined) setPrepTotalVol(d.prepTotalVol);
+        if (d.prepSamples !== undefined) setPrepSamples(d.prepSamples);
       }
       setTimeout(() => setIsRestoring(false), 50);
     }
@@ -152,7 +154,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
           preview = `Standard curve, ${numValidStds} point${numValidStds !== 1 ? 's' : ''}`;
         }
       } else if (tab === 'prep') {
-        const prepCount = unknownResults.filter(r => r.lysateConc_ngul).length;
+        const prepCount = prepSamples.filter(sample => parseFloat(sample.concentration) > 0).length;
         preview = prepCount > 0
           ? `SDS-PAGE prep, ${prepCount} sample${prepCount > 1 ? 's' : ''}`
           : 'SDS-PAGE sample prep';
@@ -171,7 +173,8 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
           unknowns,
           proteinLoad,
           sampleBufferX,
-          prepTotalVol
+          prepTotalVol,
+          prepSamples
         }
       });
     }, 1000);
@@ -186,6 +189,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
     proteinLoad,
     sampleBufferX,
     prepTotalVol,
+    prepSamples,
     unknownResults,
     isRestoring,
     addHistoryItem
@@ -263,22 +267,48 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
     setUnknownResults(results);
   }, [unknowns, regression, sampleVolInWR, wrVolume]);
 
+  useEffect(() => {
+    onAssaySamplesChange?.(assayTabIndex, unknownResults);
+  }, [unknownResults, assayTabIndex, onAssaySamplesChange]);
+
+  // Keep calculated assay samples in sync while preserving samples entered
+  // directly in the SDS-PAGE prep tab.
+  useEffect(() => {
+    const assaySamples = linkedAssaySamples ?? unknownResults;
+    const imported = assaySamples
+      .filter(result => result.lysateConc_ngul !== null && result.lysateConc_ngul !== undefined)
+      .map(result => ({
+        id: `assay-${result.id}`,
+        sourceId: result.id,
+        source: 'assay',
+        name: result.name,
+        concentration: result.lysateConc_ngul,
+      }));
+
+    setPrepSamples(previous => [
+      ...imported,
+      ...previous.filter(sample => sample.source !== 'assay'),
+    ]);
+  }, [unknownResults, linkedAssaySamples]);
+
   // SDS-PAGE prep calculations per sample
   const load = parseFloat(proteinLoad) || 15;
   const bufX = parseFloat(sampleBufferX) || 6;
   const totalVol = parseFloat(prepTotalVol) || 40;
   const bufferVol = totalVol / bufX;
 
-  // Get samples with known concentration for prep
-  const prepSamples = unknownResults.filter(r => r.lysateConc_ngul);
-
-  const prepCalcs = prepSamples.map(s => {
-    const conc_ngul = parseFloat(s.lysateConc_ngul); // ng/µL
+  const prepCalcs = prepSamples.filter(s => {
+    const concentration = parseFloat(s.concentration);
+    return Number.isFinite(concentration) && concentration > 0;
+  }).map(s => {
+    const conc_ngul = parseFloat(s.concentration); // ng/µL
     const conc_ugul_actual = conc_ngul / 1000; // µg/µL
     const lysateVol = load / conc_ugul_actual;
 
-    // Check if lysate volume alone exceeds the desired total volume
-    const overflow = lysateVol > totalVol;
+    // The lysate and the required sample buffer must both fit in the desired total volume.
+    const requiredBufferVol = totalVol / bufX;
+    const requiredCombinedVol = lysateVol + requiredBufferVol;
+    const overflow = requiredCombinedVol > totalVol;
     // If overflow: new total = lysateVol + adjusted buffer vol (1X = newTotal/bufX)
     // newTotal = lysateVol + newTotal/bufX  →  newTotal * (1 - 1/bufX) = lysateVol
     const adjTotalVol = overflow ? lysateVol / (1 - 1 / bufX) : totalVol;
@@ -292,9 +322,49 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
       lysisVol: lysisVol.toFixed(2),
       isLow: lysateVol < 0.5,
       overflow,
+      requiredCombinedVol: requiredCombinedVol.toFixed(2),
       adjTotalVol: adjTotalVol.toFixed(2),
     };
   });
+
+  const addPrepSample = () => {
+    const manualSamples = prepSamples.filter(sample => sample.source !== 'assay');
+    setPrepSamples(previous => [...previous, {
+      id: makeId(),
+      source: 'manual',
+      name: `Sample ${manualSamples.length + 1}`,
+      concentration: '',
+    }]);
+  };
+
+  const updatePrepSample = (id, field, value) => {
+    setPrepSamples(previous => previous.map(sample => sample.id === id ? { ...sample, [field]: value } : sample));
+  };
+
+  const pastePrepConcentrations = (event, startIndex) => {
+    const values = pastedValues(event.clipboardData.getData('text'));
+    if (values.length < 2) return;
+    event.preventDefault();
+    setPrepSamples(previous => {
+      const next = previous.map(sample => ({ ...sample }));
+      while (next.length < startIndex + values.length) {
+        next.push({
+          id: makeId(),
+          source: 'manual',
+          name: `Sample ${next.length + 1}`,
+          concentration: '',
+        });
+      }
+      values.forEach((value, offset) => {
+        next[startIndex + offset].concentration = value;
+      });
+      return next;
+    });
+  };
+
+  const removePrepSample = id => {
+    setPrepSamples(previous => previous.filter(sample => sample.id !== id));
+  };
 
   const copyStandards = () => {
     const rows = [['Std (µg/mL)', 'BSA 2mg/mL (µL) per WR', 'A₅₆₂']];
@@ -595,6 +665,8 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
 
         {/* ─── SDS-PAGE PREP ─── */}
         <TabsContent value="prep" className="mt-6 space-y-6">
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(360px,0.8fr)_minmax(0,1.2fr)]">
+          <div className="space-y-6">
           <Card className="border-0 shadow-sm bg-white dark:bg-white/10">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">Sample Parameters</CardTitle>
@@ -606,7 +678,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                   <NumInput value={proteinLoad} onChange={e => setProteinLoad(e.target.value)} placeholder="15" className="border-slate-200 dark:border-slate-700" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-sm text-slate-600 dark:text-slate-200">Sample buffer stock (×)</Label>
+                  <Label className="text-sm text-slate-600 dark:text-slate-200">Buffer stock (×)</Label>
                   <NumInput value={sampleBufferX} onChange={e => setSampleBufferX(e.target.value)} placeholder="6" className="border-slate-200 dark:border-slate-700" />
                 </div>
                 <div className="space-y-2">
@@ -614,9 +686,67 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                   <NumInput value={prepTotalVol} onChange={e => setPrepTotalVol(e.target.value)} placeholder="40" className="border-slate-200 dark:border-slate-700" />
                 </div>
               </div>
-              <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Samples are auto-imported from the Standard Curve tab. Complete sample up to {prepTotalVol} µL with <strong>lysis buffer</strong>.</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">Calculated samples are auto-imported from the Standard Curve tab. You can also add samples manually. Complete each sample up to {prepTotalVol} µL with <strong>lysis buffer</strong>.</p>
             </CardContent>
           </Card>
+
+          <Card className="border-0 shadow-sm bg-white dark:bg-white/10">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">Samples</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-[11px] text-slate-400">Tip: paste a copied spreadsheet column into any concentration field; sample rows are added automatically.</p>
+              <div className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
+                <table className="w-full min-w-[520px] text-sm">
+                  <thead>
+                    <tr className="bg-pink-50 dark:bg-pink-900/20">
+                      <th className="py-2 px-3 text-left font-bold text-slate-700 dark:text-slate-200">Sample ID</th>
+                      <th className="py-2 px-3 text-left font-bold text-slate-700 dark:text-slate-200">Concentration (ng/µL)</th>
+                      <th className="w-12 py-2 px-3"><span className="sr-only">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prepSamples.map((sample, index) => (
+                      <tr key={sample.id} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className="py-1.5 px-3">
+                          <Input
+                            aria-label={`Sample ID for ${sample.name}`}
+                            value={sample.name}
+                            onChange={event => updatePrepSample(sample.id, 'name', event.target.value)}
+                            className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-1"
+                          />
+                        </td>
+                        <td className="py-1.5 px-3">
+                          <NumInput
+                            aria-label={`Concentration for ${sample.name}`}
+                            value={sample.concentration}
+                            placeholder="e.g. 1500"
+                            onPaste={event => pastePrepConcentrations(event, index)}
+                            onChange={event => updatePrepSample(sample.id, 'concentration', event.target.value)}
+                            className="h-8 border-0 bg-transparent shadow-none focus-visible:ring-1"
+                          />
+                        </td>
+                        <td className="py-1.5 px-3 text-right">
+                          <Button variant="ghost" size="icon" aria-label={`Remove ${sample.name}`} className="h-8 w-8 text-slate-300 hover:text-red-400" onClick={() => removePrepSample(sample.id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                    {prepSamples.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="py-6 text-center text-xs text-slate-400">No samples yet. Add one below or import calculated samples from the Standard Curve tab.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={addPrepSample} className="flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                <Plus className="h-3 w-3" /> Add Sample
+              </button>
+            </CardContent>
+          </Card>
+          </div>
 
           {prepCalcs.length > 0 ? (
             <Card className="border-0 shadow-sm bg-gradient-to-br from-pink-50 to-rose-50">
@@ -684,7 +814,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
                 </div>
                 {prepCalcs.filter(s => s.overflow).map((s, i) => (
                   <div key={`ov-${i}`} className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-xs text-red-700 font-semibold">⚠ {s.name}: sample too dilute — lysate volume ({s.lysateVol} µL) exceeds the desired total volume ({prepTotalVol} µL).</p>
+                    <p className="text-xs text-red-700 font-semibold">⚠ {s.name}: lysate ({s.lysateVol} µL) + required sample buffer ({formatNumber(bufferVol.toFixed(2))} µL) = {s.requiredCombinedVol} µL, which exceeds the desired total volume ({prepTotalVol} µL).</p>
                     <p className="text-xs text-red-600 dark:text-red-400 mt-1">
                       Adjusted total volume: <strong>{s.adjTotalVol} µL</strong> &nbsp;|&nbsp;
                       Adjusted {bufX}× sample buffer: <strong>{s.bufferVol} µL</strong> (to maintain 1× final concentration)
@@ -702,11 +832,12 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
               </CardContent>
             </Card>
           ) : (
-            <div className="text-center py-12 text-slate-400 dark:text-slate-500">
+            <div className="rounded-xl border border-dashed border-slate-200 bg-white/40 py-8 text-center text-slate-400 dark:border-slate-800 dark:bg-white/5 dark:text-slate-500">
               <Beaker className="w-12 h-12 mx-auto mb-3 opacity-30" />
-              <p>Enter sample absorbances in the Standard Curve tab to auto-populate samples here.</p>
+              <p>Add a sample and enter its concentration to calculate the sample prep mix.</p>
             </div>
           )}
+          </div>
         </TabsContent>
       </Tabs>
       {rowMenu && <div className="fixed z-[120] w-52 rounded-xl border border-slate-200 bg-white p-1.5 text-sm shadow-xl" style={{left:rowMenu.x,top:rowMenu.y}} onClick={e=>e.stopPropagation()}>

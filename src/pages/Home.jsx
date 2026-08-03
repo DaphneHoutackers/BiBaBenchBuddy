@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy, Component } from 'react';
+import { useState, useEffect, useCallback, Suspense, lazy, Component } from 'react';
 import {
   ArrowLeft, BookOpen,
   Settings, PanelLeft, ChevronDown, Clock, Trash2, Home as HomeIcon,
@@ -478,6 +478,10 @@ export default function Home() {
     });
     return initial;
   });
+  const [proteinAssaySamplesByTab, setProteinAssaySamplesByTab] = useState({});
+  const handleProteinAssaySamplesChange = useCallback((tabIndex, samples) => {
+    setProteinAssaySamplesByTab(previous => ({ ...previous, [tabIndex]: samples }));
+  }, []);
 
   const handleAddTab = (toolKey) => {
     const newId = `${toolKey}-${Date.now()}`;
@@ -803,8 +807,8 @@ export default function Home() {
     setHistoryData(item);
   };
 
-  const getComponent = (id, instanceId) => {
-    const subtoolKey = getSubtoolKey(id);
+  const getComponent = (id, instanceId, subtabId = null) => {
+    const subtoolKey = subtabId ? `${id}-${subtabId}` : getSubtoolKey(id);
     const isAct = active === id && activeInstance[subtoolKey] === instanceId;
     const hData = isAct ? historyData : null;
     const calculatorProps = { historyData: hData, isActive: isAct, isDark, theme, settings, user };
@@ -841,7 +845,19 @@ export default function Home() {
       case 'agenda':
         return renderLazy(<AgendaTool {...calculatorProps} />);
       case 'protein':
-        return <ProteinConcCalculator {...calculatorProps} externalTab={activeTab['protein']} onTabChange={t => handleSelectTab('protein', t)} tabs={renderToolTabs('protein-' + (activeTab['protein'] || 'standards'))} />;
+        {
+          const proteinSubtab = subtabId || activeTab['protein'] || 'standards';
+          const instanceIndex = (toolInstances[`protein-${proteinSubtab}`] || []).findIndex(instance => instance.id === instanceId);
+          return <ProteinConcCalculator
+            {...calculatorProps}
+            externalTab={proteinSubtab}
+            onTabChange={t => handleSelectTab('protein', t)}
+            tabs={renderToolTabs(`protein-${proteinSubtab}`)}
+            linkedAssaySamples={proteinSubtab === 'prep' ? (proteinAssaySamplesByTab[instanceIndex] || []) : undefined}
+            assayTabIndex={instanceIndex}
+            onAssaySamplesChange={proteinSubtab === 'standards' ? handleProteinAssaySamplesChange : undefined}
+          />;
+        }
       case 'protocols':
         return renderLazy(<ProtocolLibrary {...calculatorProps} externalTab={activeTab['protocols']} onTabChange={t => handleSelectTab('protocols', t)} tabs={renderToolTabs('protocols-' + (activeTab['protocols'] || 'library'))} />);
       case 'ai':
@@ -1256,7 +1272,7 @@ export default function Home() {
                             key={inst.id}
                             style={{ display: activeInst === inst.id ? 'block' : 'none' }}
                           >
-                            {getComponent(id, inst.id)}
+                            {getComponent(id, inst.id, subtab.id)}
                           </div>
                         ))}
                       </div>
