@@ -31,15 +31,6 @@ const Input = React.forwardRef(({ className, type, onChange, onKeyDown, onPaste,
     } catch {}
   };
 
-  const insertDecimalPoint = (target) => {
-    const { start, end } = getSelection(target);
-    const nextValue = `${target.value.slice(0, start)}.${target.value.slice(end)}`;
-    setInputValue(target, nextValue);
-    requestAnimationFrame(() => {
-      setCursor(target, start + 1);
-    });
-  };
-
   const handleKeyDown = (event) => {
     onKeyDown?.(event);
   };

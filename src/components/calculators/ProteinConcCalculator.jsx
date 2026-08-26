@@ -93,10 +93,10 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   // Standard curve
   const [wrVolume, setWrVolume] = useState('1'); // mL
   const [sampleVolInWR, setSampleVolInWR] = useState('10'); // µL
-  const [standards, setStandards] = useState(DEFAULT_STD_CONCS.map((c, i) => ({ id: i + 1, conc: c, abs: '' })));
+  const [standards, setStandards] = useState(DEFAULT_STD_CONCS.map((c) => ({ id: makeId(), conc: c, abs: '' })));
   const [unknowns, setUnknowns] = useState([
-    { id: 1, name: 'Sample 1', abs: '' },
-    { id: 2, name: 'Sample 2', abs: '' },
+    { id: makeId(), name: 'Sample 1', abs: '' },
+    { id: makeId(), name: 'Sample 2', abs: '' },
   ]);
   const [regression, setRegression] = useState(null);
   const [unknownResults, setUnknownResults] = useState([]);
@@ -199,9 +199,6 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
 
   // Regression
   useEffect(() => {
-    const points = standards
-      .map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }))
-      .filter(p => !isNaN(p.x) && !isNaN(p.y) && String(standards.find(s => s.x === p.x)?.abs) !== '');
     const validPoints = standards
       .filter(s => s.abs !== '' && !isNaN(parseFloat(s.abs)) && !isNaN(parseFloat(s.conc)))
       .map(s => ({ x: parseFloat(s.conc), y: parseFloat(s.abs) }));
@@ -211,7 +208,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   }, [standards]);
 
   const addStandard = () => {
-    const id = Math.max(...standards.map(s => s.id)) + 1;
+    const id = makeId();
     setStandards([...standards, { id, conc: '', abs: '' }]);
   };
 
@@ -653,8 +650,8 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
               </table></div>
               </div>
               <button onClick={() => {
-                const id = Math.max(...unknowns.map(u => u.id)) + 1;
-                setUnknowns([...unknowns, { id, name: `Sample ${id}`, abs: '' }]);
+                const id = makeId();
+                setUnknowns([...unknowns, { id, name: `Sample ${unknowns.length + 1}`, abs: '' }]);
               }} className="flex items-center gap-1 text-sm text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:bg-slate-800/50 px-2 py-1.5 rounded-lg w-full justify-center mt-1">
                 <Plus className="w-3 h-3" /> Add Sample
               </button>

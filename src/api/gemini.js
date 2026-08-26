@@ -5,6 +5,31 @@
 
 const getSettings = () => {
   try {
+    // 1. Try to read active user from auth storage if available
+    const authData = localStorage.getItem('bibabenchbuddy-auth');
+    if (authData) {
+      try {
+        const parsed = JSON.parse(authData);
+        const userId = parsed?.user?.id || parsed?.currentSession?.user?.id;
+        if (userId) {
+          const userSettings = localStorage.getItem(`biba_bench_buddy_settings_${userId}`);
+          if (userSettings) return JSON.parse(userSettings);
+        }
+      } catch {}
+    }
+    // 2. Scan localStorage for user-specific settings keys containing API keys
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('biba_bench_buddy_settings_')) {
+        try {
+          const val = JSON.parse(localStorage.getItem(key) || '{}');
+          if (val.groqApiKey || val.openaiApiKey || val.geminiApiKey || val.openrouterApiKey) {
+            return val;
+          }
+        } catch {}
+      }
+    }
+    // 3. Fallback to default guest settings
     return JSON.parse(localStorage.getItem('biba_bench_buddy_settings') || '{}');
   } catch {
     return {};

@@ -119,10 +119,20 @@ const createWindow = async () => {
       contextIsolation: true,
       sandbox: false,
       webSecurity: true,
-      contentSecurityPolicy: isDev
-        ? "default-src 'self' 'unsafe-inline' data:; connect-src 'self' ws://localhost:*; script-src 'self' 'unsafe-inline' 'unsafe-eval' strict-dynamic;"
-        : "default-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';"
     },
+  });
+
+  const csp = isDev
+    ? "default-src 'self' 'unsafe-inline' data: blob:; connect-src 'self' ws://localhost:* http://localhost:* https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;"
+    : "default-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;";
+
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [csp],
+      },
+    });
   });
 
   mainWindow.once('ready-to-show', () => {

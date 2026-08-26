@@ -169,7 +169,7 @@ const loadLib = () => { try { return JSON.parse(localStorage.getItem(LIB_KEY) ||
 const saveLib = (lib) => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch { } };
 const getUserLibKey = (userId) => userId ? `${LIB_KEY}_${userId}` : LIB_KEY;
 const getLibraryHistoryId = (userId) => userId ? `${LIB_HISTORY_TOOL_ID}_${userId}` : LIB_HISTORY_TOOL_ID;
-const loadUserLib = (userId) => {
+export const loadUserLib = (userId) => {
   try {
     const scoped = localStorage.getItem(getUserLibKey(userId));
     if (scoped) return JSON.parse(scoped);
@@ -283,7 +283,7 @@ function radialRectEdgePoint(cx, cy, lx, ly, width, height) {
   return { x: lx - dx * scale, y: ly - dy * scale };
 }
 
-function layoutExternalLabels(labels, { cx, cy, radius, sideOffset = 44, minGap = 4, laneStep = 17 }) {
+function layoutExternalLabels(labels, { cx, cy, radius, sideOffset = 48, minGap = 4, laneStep = 24 }) {
   const placed = [];
   const overlaps = (a, b) => !(a.x2 < b.x1 || a.x1 > b.x2 || a.y2 < b.y1 || a.y1 > b.y2);
   const rectFor = (label, angle, lane, tangentShift) => {
@@ -307,21 +307,43 @@ function layoutExternalLabels(labels, { cx, cy, radius, sideOffset = 44, minGap 
     .sort((a, b) => (a.anchorAngle ?? 0) - (b.anchorAngle ?? 0))
     .map(label => {
       const anchor = label.anchorAngle ?? label.labelAngle ?? label.ma ?? 0;
-      const tangentOptions = [0, -10, 10, -20, 20, -32, 32];
-      let best = null;
-      for (let lane = 0; lane < 7; lane++) {
+      const tangentOptions = [0, -12, 12, -24, 24, -38, 38, -54, 54, -72, 72];
+      let bestNonColliding = null;
+      let bestColliding = null;
+
+      for (let lane = 0; lane < 10; lane++) {
         for (const tangentShift of tangentOptions) {
           const rect = rectFor(label, anchor, lane, tangentShift);
-          const collision = placed.some(item => overlaps(rect, item.rect));
-          const score = lane * 100 + Math.abs(tangentShift);
-          if (!best || score < best.score) best = { rect, lane, tangentShift, score, collision };
+          
+          // Ensure all corners of the label card are strictly outside the plasmid circle & features
+          const corners = [
+            { x: rect.x1, y: rect.y1 },
+            { x: rect.x2, y: rect.y1 },
+            { x: rect.x1, y: rect.y2 },
+            { x: rect.x2, y: rect.y2 },
+          ];
+          const tooCloseToRing = corners.some(c => {
+            const dist = Math.hypot(c.x - cx, c.y - cy);
+            return dist < radius + 22;
+          });
+
+          const collision = tooCloseToRing || placed.some(item => overlaps(rect, item.rect));
+          const score = lane * 50 + Math.abs(tangentShift);
+
           if (!collision) {
-            best = { rect, lane, tangentShift, score, collision };
-            break;
+            if (!bestNonColliding || score < bestNonColliding.score) {
+              bestNonColliding = { rect, lane, tangentShift, score };
+            }
+          } else {
+            if (!bestColliding || score < bestColliding.score) {
+              bestColliding = { rect, lane, tangentShift, score };
+            }
           }
         }
-        if (best && !best.collision) break;
+        if (bestNonColliding) break;
       }
+
+      const best = bestNonColliding || bestColliding;
       const positioned = {
         ...label,
         labelAngle: anchor,
@@ -825,7 +847,7 @@ function CircularMap({
         anchorAngle: ang(site.pos),
       };
     }),
-  ], { cx, cy, radius: R, sideOffset: 46, minGap: 3 });
+  ], { cx, cy, radius: R, sideOffset: 50, minGap: 4, laneStep: 24 });
   const routeLeaderLine = (label, ring, edge) => {
     const makePath = points => points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x} ${p.y}`).join(' ');
     const radialBend = point(Math.max(R + 23, label.labelRadius - 20), label.anchorAngle);
@@ -839,7 +861,7 @@ function CircularMap({
 
   return (
     <svg
-      viewBox="-140 -95 980 790"
+      viewBox="-160 -120 1020 840"
       style={{ width: '100%', height: '100%', minHeight: isMobile ? '100%' : 560 }}
       onClick={(e) => onMapPositionClick?.(e, posFromSvgEvent(e))}
     >
@@ -1134,6 +1156,34 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
   const [mapSearchQuery, setMapSearchQuery] = useState('');
   const [mapSearchMatches, setMapSearchMatches] = useState([]);
   const [activeMapSearchIndex, setActiveMapSearchIndex] = useState(0);
+  const mapSearchInputRef = useRef(null);
+
+  useEffect(() => {
+    if (showMapSearch && mapSearchInputRef.current) {
+      mapSearchInputRef.current.focus();
+      mapSearchInputRef.current.select();
+    }
+  }, [showMapSearch]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        setShowMapSearch(true);
+        if (viewMode !== 'map' && viewMode !== 'sequence') {
+          setViewMode('map');
+        }
+        setTimeout(() => {
+          if (mapSearchInputRef.current) {
+            mapSearchInputRef.current.focus();
+            mapSearchInputRef.current.select();
+          }
+        }, 50);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [viewMode]);
   const [mapLayerVisibility, setMapLayerVisibility] = useState({
     enzymes: true,
     features: true,
@@ -3723,7 +3773,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                   return (
                     <tr
                       key={entry.id}
-                      className={`border-b border-slate-100 ${isSelected ? 'bg-slate-100' : activeEntryId === entry.id ? 'bg-teal-50/60' : 'hover:bg-slate-50'}`}
+                      className={`border-b border-slate-100 transition-colors ${isSelected ? 'bg-slate-100 font-semibold text-slate-900' : activeEntryId === entry.id ? 'bg-slate-100/80 font-medium text-slate-900' : 'hover:bg-slate-50/80'}`}
                       onClick={(event) => handleLibraryOverviewRowClick(event, entry)}
                       onDoubleClick={() => { if (!isFolder) loadFromLibrary(entry); }}
                       onContextMenu={(event) => openLibraryContextMenu(event, entry)}
@@ -4473,7 +4523,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
               {/* Library Button */}
               <div className="flex h-[53px] items-center border-b bg-white px-2">
                 <div className="flex w-full items-center gap-1">
-                  <button onClick={() => setViewMode('library')} className={`flex h-9 flex-1 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors ${viewMode === 'library' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-black-100 bg-slate-50 text-black-700 hover:bg-white'}`}>
+                  <button onClick={() => setViewMode('library')} className={`flex h-9 flex-1 items-center gap-2 rounded-lg border px-3 text-xs font-bold transition-colors ${viewMode === 'library' ? 'border-slate-300 bg-slate-100 text-slate-800 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-white'}`}>
                     <Library className="w-4 h-4 flex-shrink-0" /> Library
                   </button>
                   <button
@@ -4518,7 +4568,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                       const bgStyle = selected
                         ? { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1', color: '#111827' }
                         : active
-                        ? { backgroundColor: '#f8fafc', borderColor: '#99f6e4', color: '#111827' }
+                        ? { backgroundColor: '#f8fafc', borderColor: '#cbd5e1', color: '#111827' }
                         : { backgroundColor: 'transparent', borderColor: 'transparent', color: '#111827' };
 
                       return (
@@ -4661,7 +4711,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                         return (
                           <div
                             key={file.id}
-                            className={`group flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors ${active ? 'border-teal-200 bg-teal-50 font-bold' : 'border-transparent hover:bg-slate-50'}`}
+                            className={`group flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1.5 transition-colors ${active ? 'border-slate-300 bg-slate-100 font-bold text-slate-900' : 'border-transparent hover:bg-slate-50'}`}
                             onClick={() => openTemporaryFile(file)}
                             onContextMenu={(e) => {
                               e.preventDefault();
@@ -4771,7 +4821,6 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                       { key: 'enzymes', label: 'Enzymes', title: 'Show enzymes', icon: BiGame },
                       { key: 'features', label: 'Features', title: 'Show features', icon: PiTagBold },
                       { key: 'primers', label: 'Primers', title: 'Show primers', icon: TbArrowsExchange },
-                      { key: 'translationsOrfs', label: 'Translations and ORFs', title: 'Show translations and ORFs', icon: RiTextWrap },
                       { key: 'dnaColor', label: 'DNA color', title: 'Show DNA color annotations', icon: Palette },
                     ].map(({ key, label, title, icon: Icon }) => (
                       <button
@@ -5500,6 +5549,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                     <div className="absolute bottom-0 left-0 right-0 z-30 flex h-8 items-center gap-2 border-t border-slate-200 bg-slate-100 px-12 py-0.5">
                       <span className="flex-shrink-0 text-xs font-semibold text-slate-500">Find DNA sequence:</span>
                       <Input
+                        ref={mapSearchInputRef}
                         value={mapSearchQuery}
                         onChange={e => setMapSearchQuery(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') runMapSequenceSearch(); }}

@@ -161,7 +161,7 @@ export default function AlignmentView({ seq, seqName, library = [] }) {
           <Textarea
             value={seq1} onChange={e => setSeq1(e.target.value)}
             placeholder="Plak DNA sequentie of FASTA..."
-            className="font-mono text-xs min-h-[120px] resize-none border-slate-200"
+            className="font-mono text-xs min-h-[300px] h-[360px] lg:h-[420px] resize-y border-slate-200 bg-white leading-relaxed"
           />
         </div>
         <div>
@@ -191,7 +191,7 @@ export default function AlignmentView({ seq, seqName, library = [] }) {
           <Textarea
             value={seq2} onChange={e => setSeq2(e.target.value)}
             placeholder="Plak DNA sequentie of FASTA..."
-            className="font-mono text-xs min-h-[120px] resize-none border-slate-200"
+            className="font-mono text-xs min-h-[300px] h-[360px] lg:h-[420px] resize-y border-slate-200 bg-white leading-relaxed"
           />
         </div>
       </div>

@@ -128,6 +128,7 @@ export default function PCRProductGenerator() {
   const [saveToLibraryOpen, setSaveToLibraryOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [savedToLib, setSavedToLib] = useState(false);
+  const [libraryAlert, setLibraryAlert] = useState(null);
 
   useEffect(() => {
     const t = template.toUpperCase().replace(/[^ATGC]/g, '');

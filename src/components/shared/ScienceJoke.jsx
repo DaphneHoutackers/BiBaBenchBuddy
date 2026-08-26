@@ -13,7 +13,7 @@ function getNextJoke() {
   try {
     const rawSeen = localStorage.getItem(SEEN_JOKES_KEY);
     if (rawSeen) seen = JSON.parse(rawSeen);
-  } catch (e) {}
+  } catch {}
 
   // If we've seen almost all jokes, reset the seen list
   if (seen.length >= SCIENCE_JOKES.length - 2) {
@@ -39,7 +39,7 @@ function getNextJoke() {
   try {
     localStorage.removeItem('bibabenchbuddy_science_jokes_pool');
     localStorage.removeItem('bibabenchbuddy_science_jokes_replenishing');
-  } catch (e) {}
+  } catch {}
 
   return next;
 }

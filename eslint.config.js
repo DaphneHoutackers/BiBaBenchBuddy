@@ -11,6 +11,7 @@ export default defineConfig([
       "dist-electron/**",
       "release/**",
       "node_modules/**",
+      ".kilo/**",
     ],
   },
   { 
@@ -20,9 +21,20 @@ export default defineConfig([
       "unused-imports": unusedImports 
     }, 
     languageOptions: { 
-      globals: globals.browser 
+      globals: {
+        ...globals.browser,
+      }
     } 
   },
+  {
+    files: ["electron/**", "scripts/**", "*.config.js"],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      }
+    }
+  },
+  js.configs.recommended,
   pluginReact.configs.flat.recommended,
   {
     settings: {
@@ -35,6 +47,7 @@ export default defineConfig([
       "react/react-in-jsx-scope": "off",
       "react/jsx-uses-react": "off",
       "no-unused-vars": "off",
+      "no-empty": "off",
       "unused-imports/no-unused-imports": "error",
       "unused-imports/no-unused-vars": [
         "warn",

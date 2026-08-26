@@ -133,6 +133,58 @@ function hasPegVol(pegVolInput) {
   return pegVolInput !== undefined && String(pegVolInput).trim() !== '' && Number.isFinite(parseFloat(pegVolInput));
 }
 
+const isAtMaxAmount = (value, maxValue) => {
+  const current = parseFloat(value);
+  return Number.isFinite(current) && Number.isFinite(maxValue) && Math.abs(current - maxValue) < 0.05;
+};
+
+function getOptimalLigationVectorAmount(vectorConc, vectorLength, inserts, totalVolume, ligase, ligaseVol, pegVol) {
+  const c_vec = parseFloat(vectorConc);
+  const l_vec = parseFloat(vectorLength);
+  if (isNaN(c_vec) || isNaN(l_vec) || c_vec <= 0 || l_vec <= 0) return null;
+
+  let sumTerms = 0;
+  for (const ins of inserts) {
+    const c_ins = parseFloat(ins.conc);
+    const l_ins = parseFloat(ins.length);
+    const r_ins = parseFloat(ins.ratio) || 3;
+    if (isNaN(c_ins) || isNaN(l_ins) || c_ins <= 0 || l_ins <= 0 || isNaN(r_ins) || r_ins < 0) {
+      return null;
+    }
+    sumTerms += (r_ins * l_ins) / (l_vec * c_ins);
+  }
+
+  const volPerNg = (1 / c_vec) + sumTerms;
+  if (volPerNg <= 0) return null;
+
+  const ligaseInfo = LIGASES[ligase] || LIGASES['T4 DNA Ligase'];
+  const bufferVol = parseFloat(totalVolume) / (ligaseInfo?.bufferFraction || 10);
+  const ligVol = parseFloat(ligaseVol) || 1;
+  const pVol = calcPegVol(pegVol);
+  const maxDnaVol = parseFloat(totalVolume) - bufferVol - ligVol - pVol;
+  if (isNaN(maxDnaVol) || maxDnaVol <= 0) return null;
+
+  const maxVectorNg = maxDnaVol / volPerNg;
+  let rounded = Math.floor(maxVectorNg * 10) / 10;
+
+  // Step down slightly if 2-decimal rounded display volumes would exceed maxDnaVol
+  while (rounded > 0) {
+    const vVol = parseFloat((rounded / c_vec).toFixed(2));
+    let iVolSum = 0;
+    for (const ins of inserts) {
+      const iKb = parseFloat(ins.length) / 1000;
+      const vKb = l_vec / 1000;
+      const iAmount = (rounded * iKb * parseFloat(ins.ratio || 3)) / vKb;
+      iVolSum += parseFloat((iAmount / parseFloat(ins.conc)).toFixed(2));
+    }
+    if (vVol + iVolSum <= maxDnaVol + 0.005) {
+      break;
+    }
+    rounded = Math.round((rounded - 0.1) * 10) / 10;
+  }
+  return rounded;
+}
+
 function calcLigationMix(vectorConc, vectorLength, inserts, vectorAmount, totalVolume, ligase, ligaseVol, pegVol, autoDilute = false, minVol = 0.5) {
   const vectorKb = parseFloat(vectorLength) / 1000;
   const vectorVolumeRaw = parseFloat(vectorAmount) / parseFloat(vectorConc);
@@ -180,7 +232,7 @@ function calcLigationMix(vectorConc, vectorLength, inserts, vectorAmount, totalV
     waterVol: Math.max(0, waterVol).toFixed(2),
     controlWaterVol: Math.max(0, controlWaterVol).toFixed(2),
     protocol: ligaseInfo.temp,
-    isValid: waterVol >= 0
+    isValid: waterVol >= -0.005
   };
 }
 
@@ -355,25 +407,51 @@ function SingleLigation({ historyData, isActive, sessionId }) {
           {/* Vector + Inserts in one row */}
           <div className="flex gap-2 flex-1 overflow-x-auto pb-1">
             {/* Vector card */}
-            <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0">
-              <CardHeader className="pb-1.5 pt-3">
-                <CardTitle className="text-xs font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Vector</CardTitle>
-              </CardHeader>
-              <CardContent className="pb-3 pt-0 space-y-1.5 min-w-[120px]">
-                <div>
-                  <Label className="text-xs text-slate-700 dark:text-slate-200">Conc. (ng/µL)</Label>
-                  <NumInput placeholder="50" value={vectorConc} onChange={e => setVectorConc(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-700 dark:text-slate-200">Length (bp)</Label>
-                  <NumInput placeholder="5000" value={vectorLength} onChange={e => setVectorLength(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
-                </div>
-                <div>
-                  <Label className="text-xs text-slate-700 dark:text-slate-200">Amount (ng)</Label>
-                  <NumInput placeholder="50" value={vectorAmount} onChange={e => setVectorAmount(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
-                </div>
-              </CardContent>
-            </Card>
+            {(() => {
+              const singleMaxVectorAmount = getOptimalLigationVectorAmount(vectorConc, vectorLength, inserts, totalVolume, ligase, ligaseVol, pegVolInput);
+              const singleVectorIsMax = isAtMaxAmount(vectorAmount, singleMaxVectorAmount);
+
+              return (
+                <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0">
+                  <CardHeader className="pb-1.5 pt-3">
+                    <CardTitle className="text-xs font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Vector</CardTitle>
+                  </CardHeader>
+                  <CardContent className="pb-3 pt-0 space-y-1.5 min-w-[125px]">
+                    <div>
+                      <Label className="text-xs text-slate-700 dark:text-slate-200">Conc. (ng/µL)</Label>
+                      <NumInput placeholder="50" value={vectorConc} onChange={e => setVectorConc(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-700 dark:text-slate-200">Length (bp)</Label>
+                      <NumInput placeholder="5000" value={vectorLength} onChange={e => setVectorLength(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-700 dark:text-slate-200">Amount (ng)</Label>
+                      <div className="relative flex items-center">
+                        <NumInput 
+                          placeholder="50" 
+                          value={vectorAmount} 
+                          onChange={e => setVectorAmount(e.target.value)} 
+                          className="h-7 text-xs pr-11 border-slate-200 dark:border-slate-700 w-full" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (singleMaxVectorAmount !== null && singleMaxVectorAmount > 0) {
+                              setVectorAmount(singleMaxVectorAmount.toFixed(1));
+                            }
+                          }}
+                          className={`absolute right-1 text-[9px] h-4.5 px-1 font-bold shadow-sm border rounded ${singleVectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 dark:bg-emerald-500' : 'text-violet-600 border-violet-200 dark:border-violet-800 hover:bg-violet-50 bg-white/95 dark:bg-slate-900/95'}`}
+                          title="Auto-calculate maximum vector DNA"
+                        >
+                          {singleVectorIsMax ? <Check className="w-2.5 h-2.5" /> : 'Max'}
+                        </button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             {/* Inserts card — all inserts in one card */}
             <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0">
@@ -630,6 +708,7 @@ function BatchLigation({ historyData, isActive, sessionId }) {
   }, [ligations, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol, addHistoryItem]);
 
   const pegVol = calcPegVol(pegVolInput);
+  const tableMinWidth = 140 + ligations.length * 240;
 
   const addLigation = () => {
     const id = Math.max(...ligations.map(l => l.id)) + 1;
@@ -841,7 +920,33 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                         </div>
                         <div>
                           <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Amount (ng)</Label>
-                          <NumInput value={lig.vectorAmount} onChange={e => updateLigation(lig.id, 'vectorAmount', e.target.value)} placeholder="50" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                          {(() => {
+                            const cardMaxVectorAmount = getOptimalLigationVectorAmount(lig.vectorConc, lig.vectorLength, lig.inserts, totalVolume, ligase, ligaseVol, pegVolInput);
+                            const cardVectorIsMax = isAtMaxAmount(lig.vectorAmount, cardMaxVectorAmount);
+
+                            return (
+                              <div className="relative flex items-center">
+                                <NumInput 
+                                  value={lig.vectorAmount} 
+                                  onChange={e => updateLigation(lig.id, 'vectorAmount', e.target.value)} 
+                                  placeholder="50" 
+                                  className="h-6.5 text-xs pr-11 border-slate-200 dark:border-slate-700 px-1.5 animate-none w-full" 
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (cardMaxVectorAmount !== null && cardMaxVectorAmount > 0) {
+                                      updateLigation(lig.id, 'vectorAmount', cardMaxVectorAmount.toFixed(1));
+                                    }
+                                  }}
+                                  className={`absolute right-1 text-[9px] h-4.5 px-1 font-bold shadow-sm border rounded ${cardVectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 dark:bg-emerald-500' : 'text-violet-600 border-violet-200 dark:border-violet-800 hover:bg-violet-50 bg-white/95 dark:bg-slate-900/95'}`}
+                                  title="Auto-calculate maximum vector DNA"
+                                >
+                                  {cardVectorIsMax ? <Check className="w-2.5 h-2.5" /> : 'Max'}
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
@@ -900,7 +1005,7 @@ function BatchLigation({ historyData, isActive, sessionId }) {
               <Table className="w-4 h-4 text-violet-600 dark:text-violet-400" /> Batch Ligation Table
             </CardTitle>
             <div className="flex gap-2">
-              <button onClick={copyMultiTable} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:bg-slate-800/50 px-2 py-1 rounded-lg transition-colors">
+              <button onClick={copyMultiTable} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1 rounded-lg transition-colors">
                 {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                 {copied ? 'Copied!' : 'Copy Table'}
               </button>
@@ -940,7 +1045,16 @@ function BatchLigation({ historyData, isActive, sessionId }) {
               </Card>
             )}
             <div className="rounded-xl">
-            <table className="w-full text-xs border-separate border-spacing-0 rounded-xl">
+            <table className="w-full text-xs border-separate border-spacing-0 rounded-xl table-fixed" style={{ minWidth: `${tableMinWidth}px` }}>
+              <colgroup>
+                <col style={{ width: '140px' }} />
+                {ligations.map((lig) => (
+                  <React.Fragment key={`main-cols-${lig.id}`}>
+                    <col style={{ width: '120px' }} />
+                    <col style={{ width: '120px' }} />
+                  </React.Fragment>
+                ))}
+              </colgroup>
               <thead>
                 <tr>
                   <th className="text-left py-1.5 px-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold min-w-[140px] rounded-tl-xl"
@@ -991,9 +1105,11 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                     {row.cells.map((cell, i) => {
                       const [a, b] = cell;
                       const color = getLigationColor(ligations[i], i);
+                      const r = allResults[i];
+                      const isOver = r && !r.isValid;
                       
                       const ligationCellClass = row.isTotal
-                        ? 'font-bold text-slate-800 dark:text-slate-100'
+                        ? (isOver ? 'font-bold text-red-600 dark:text-red-400 bg-red-50/40 dark:bg-red-950/20' : 'font-bold text-slate-800 dark:text-slate-100')
                         : row.isDna && a !== '—' ? 'text-red-600 dark:text-red-400' : 'text-slate-700 dark:text-slate-200';
                       const bbCellClass = row.isTotal
                         ? 'font-bold text-slate-800 dark:text-slate-100'
@@ -1014,7 +1130,19 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                       return (
                         <React.Fragment key={i}>
                           <td className={`relative py-2 px-3 text-center font-bold ${ligationCellClass}`} style={ligationCellBorder}>
-                            {a}
+                            <span>{a}</span>
+                            {row.isTotal && isOver && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="inline-flex items-center justify-center w-3 h-3 rounded-full border border-red-500 text-red-500 font-bold text-[7px] ml-1 flex-shrink-0 cursor-default align-middle">!</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-[220px] text-xs">
+                                    <p>Total volume exceeds {totalVolume} µL. Adjust the amount (ng) or molar ratios to reduce the DNA volumes.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                           </td>
                           <td className={`py-2 px-3 text-center font-bold ${bbCellClass} ${isLastRow && i === row.cells.length - 1 ? 'rounded-br-xl' : ''}`} style={bbCellBorder}>{b}</td>
                         </React.Fragment>
@@ -1026,6 +1154,65 @@ function BatchLigation({ historyData, isActive, sessionId }) {
               </tbody>
             </table>
             </div>
+
+            {/* Info cards in separate table for alignment */}
+            {allResults.some(r => r) && (
+              <table className="w-full text-xs border-separate border-spacing-0 mt-3 table-fixed" style={{ minWidth: `${tableMinWidth}px` }}>
+                <colgroup>
+                  <col style={{ width: '140px' }} />
+                  {ligations.map((lig) => (
+                    <React.Fragment key={`info-cols-${lig.id}`}>
+                      <col style={{ width: '120px' }} />
+                      <col style={{ width: '120px' }} />
+                    </React.Fragment>
+                  ))}
+                </colgroup>
+                <tbody>
+                  <tr style={{ background: 'transparent' }}>
+                    <td style={{ padding: '0', border: 'none', background: 'transparent' }} />
+                    {ligations.map((lig, i) => {
+                      const r = allResults[i];
+                      const color = getLigationColor(lig, i);
+                      const ratios = ['1', ...lig.inserts.map(ins => ins.ratio || '3')];
+                      if (!r) return <td key={lig.id} colSpan={2} style={{ border: 'none', padding: '0' }} />;
+                      const ngParts = [formatNumber(lig.vectorAmount), ...r.insertResults.map(ins => formatNumber(ins.insertAmount))];
+                      const totalNg = (parseFloat(lig.vectorAmount || 0) + r.insertResults.reduce((s, ins) => s + parseFloat(ins.insertAmount || 0), 0)).toFixed(1);
+                      return (
+                        <td key={lig.id} colSpan={2} style={{ border: 'none', padding: '0 6px', background: 'transparent' }}>
+                          <div className="w-full rounded-lg border-2 py-1.5 px-1.5 shadow-sm" style={{ borderColor: color.border, background: color.header44, color: color.text }}>
+                            <div className="grid grid-cols-[minmax(0,1fr)_68px] items-stretch gap-2">
+                              <div className="overflow-hidden rounded-md border border-white/50 bg-white/55 dark:bg-slate-950/20">
+                                <div
+                                  className="grid text-center"
+                                  style={{ gridTemplateColumns: `42px repeat(${ratios.length}, minmax(28px, 1fr))` }}
+                                >
+                                  <div className="border-b border-white/60 px-1 py-0.5 text-[8px] font-semibold uppercase opacity-60">Ratio</div>
+                                  {ratios.map((ratio, ratioIdx) => (
+                                    <div key={`ratio-${lig.id}-${ratioIdx}`} className="border-b border-l border-white/60 px-1 py-0.5 text-[10px] font-bold truncate whitespace-nowrap" title={ratio}>
+                                      {ratio}
+                                    </div>
+                                  ))}
+                                  <div className="px-1 py-0.5 text-[8px] font-semibold uppercase opacity-60">ng</div>
+                                  {ngParts.map((ng, ngIdx) => (
+                                    <div key={`mass-${lig.id}-${ngIdx}`} className="border-l border-white/60 px-1 py-0.5 text-[10px] font-bold truncate whitespace-nowrap" title={`${ng} ng`}>
+                                      {ng}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-center justify-center rounded-md border border-white/50 bg-white/55 px-1 text-center dark:bg-slate-950/20">
+                                <span className="text-[8px] font-semibold uppercase opacity-60">Total DNA</span>
+                                <span className="text-[10px] font-extrabold whitespace-nowrap">{totalNg} ng</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
+            )}
           </div>
           <div className="p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 rounded-lg mt-2">
             <p className="text-xs text-blue-700 dark:text-blue-300"><strong>Protocol:</strong> {ligaseInfo.temp}</p>

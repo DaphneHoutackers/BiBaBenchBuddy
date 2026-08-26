@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, isSyncEnabled } from '@/lib/supabase';
 import { makeId } from '@/utils/makeId';
+import { useAuth } from '@/lib/AuthContext';
 
 const HistoryContext = createContext(null);
 const LOCAL_STORAGE_KEY = 'bibabenchbuddy_tool_history';
@@ -34,19 +35,8 @@ function buildRemoteRow(item, userId) {
 }
 
 export function HistoryProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
   const [isRemoteLoading, setIsRemoteLoading] = useState(false);
-  
-  useEffect(() => {
-    if (!isSyncEnabled()) return;
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
 
   const getStorageKey = useCallback(() => {
     return user ? `${LOCAL_STORAGE_KEY}_${user.id}` : LOCAL_STORAGE_KEY;

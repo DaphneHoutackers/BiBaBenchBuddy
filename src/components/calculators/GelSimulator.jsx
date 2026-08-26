@@ -15,6 +15,7 @@ import {
   getEnzymeDisplayName,
 } from '@/lib/enzymes';
 import { makeId } from '@/utils/makeId';
+import { loadUserLib } from '@/components/calculators/PlasmidAnalyzer';
 
 // ── DNA Ladders ──
 const LADDERS = {
@@ -558,7 +559,7 @@ function DnaGelPanel({ activeLanes, selectedLadder, agarose, excisedBands, onBan
             style={{ display: 'block', maxWidth: '100%', background: '#fff', borderRadius: 4, border: '1px solid #e2e8f0', cursor: onBandClick ? 'crosshair' : 'default' }} />
         </div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {activeLanes.map((lane, idx) => {
+          {activeLanes.map((lane) => {
             const laneColor = (laneColors && laneColors[lane.id]) || '#000000';
             return (
               <div key={lane.id} className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
@@ -876,7 +877,11 @@ function WesternBlotTab() {
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════
 export default function GelAndWBSimulator({ historyData, isActive, externalTab, onTabChange, tabs }) {
-  const { addHistoryItem } = useHistory();
+  const { addHistoryItem, user } = useHistory();
+  const [library, setLibrary] = useState(() => loadUserLib(user?.id));
+  useEffect(() => {
+    setLibrary(loadUserLib(user?.id));
+  }, [user?.id]);
   const [tab, setTab] = useState(externalTab || 'dna');
   useEffect(() => { if (externalTab) setTab(externalTab); }, [externalTab]);
   const [selectedLadder, setSelectedLadder] = useState('GeneRuler 1kb');
@@ -999,7 +1004,15 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
     setDnaLanes([...dnaLanes, { id, label: `Lane ${id}`, type: 'sequence', manualFragments: '', sequence: '', enzymes: [], circular: true }]);
   };
 
-  const updateLane = (id, field, val) => setDnaLanes(dnaLanes.map(l => l.id === id ? { ...l, [field]: val } : l));
+  const updateLane = (id, fieldOrObj, val) => {
+    setDnaLanes(prev => prev.map(l => {
+      if (l.id !== id) return l;
+      if (typeof fieldOrObj === 'object' && fieldOrObj !== null) {
+        return { ...l, ...fieldOrObj };
+      }
+      return { ...l, [fieldOrObj]: val };
+    }));
+  };
 
   return (
     <div className="space-y-4">
@@ -1100,7 +1113,7 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
 
               <div className="space-y-3">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200 px-1">Lanes & Samples</h3>
-                {dnaLanes.map((lane, idx) => (
+                {dnaLanes.map((lane) => (
                   <Card key={lane.id} className={`border border-slate-200 dark:border-slate-700 transition-all ${lane.type === 'sequence' ? 'border-l-4 border-l-rose-500' : 'border-l-4 border-l-blue-500'}`}>
                     <CardContent className="p-3 space-y-3">
                       <div className="flex items-center justify-between">
@@ -1109,17 +1122,55 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
                           <Input value={lane.label} onChange={e => updateLane(lane.id, 'label', e.target.value)} 
                             className="h-7 text-sm font-semibold border-transparent hover:border-slate-200 dark:border-slate-700 focus:bg-white dark:bg-slate-900 w-32 bg-transparent" />
                         </div>
-                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
-                          <button onClick={() => updateLane(lane.id, 'type', 'sequence')}
-                            className={`px-2 py-0.5 text-[10px] font-bold uppercase rounded ${lane.type === 'sequence' ? 'bg-white dark:bg-slate-900 shadow-sm text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                        <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 w-fit">
+                          <button
+                            type="button"
+                            onClick={() => updateLane(lane.id, 'type', 'sequence')}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${lane.type === 'sequence' ? 'bg-white dark:bg-slate-900 shadow-sm text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                          >
                             Digest
                           </button>
-                          <button onClick={() => updateLane(lane.id, 'type', 'manual')}
-                            className={`px-2 py-0.5 text-[11px] font-bold uppercase rounded ${lane.type === 'manual' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                          <button
+                            type="button"
+                            onClick={() => updateLane(lane.id, 'type', 'manual')}
+                            className={`px-2.5 py-1 text-[10px] font-bold uppercase rounded-md transition-all ${lane.type === 'manual' ? 'bg-white dark:bg-slate-900 shadow-sm text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                          >
                             Manual
                           </button>
-                          <Button variant="ghost" size="icon" className="h-5 w-5 ml-1 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400" onClick={() => setDnaLanes(dnaLanes.filter(l => l.id !== lane.id))}>
-                            <X className="w-3 h-3" />
+                          {library && library.filter(item => item.type !== 'folder').length > 0 && (
+                            <div className="relative inline-flex items-center">
+                              <button
+                                type="button"
+                                className="px-2.5 py-1 text-[10px] font-bold uppercase rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                              >
+                                Library
+                              </button>
+                              <select
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                defaultValue=""
+                                onChange={(e) => {
+                                  const entry = library.find(item => item.id === e.target.value);
+                                  if (entry) {
+                                    const seq = entry.sequence || entry.rawInput || entry.seq || entry.content || '';
+                                    updateLane(lane.id, {
+                                      sequence: seq,
+                                      circular: entry.isCircular !== undefined ? !!entry.isCircular : (entry.topology === 'circular' || true),
+                                      type: 'sequence',
+                                      label: entry.name || lane.label,
+                                    });
+                                  }
+                                  e.target.value = '';
+                                }}
+                              >
+                                <option value="" disabled>Library</option>
+                                {library.filter(item => item.type !== 'folder').map(entry => (
+                                  <option key={entry.id} value={entry.id}>{entry.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          <Button variant="ghost" size="icon" className="h-6 w-6 ml-0.5 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400" onClick={() => setDnaLanes(dnaLanes.filter(l => l.id !== lane.id))} title="Verwijder lane">
+                            <X className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       </div>

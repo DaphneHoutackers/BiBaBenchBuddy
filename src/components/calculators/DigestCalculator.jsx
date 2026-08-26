@@ -15,18 +15,42 @@ import { makeId } from '@/utils/makeId';
 import { getEnzymeDisplayName, getSelectableEnzymes } from '@/lib/enzymes';
 import { BiGame } from 'react-icons/bi';
 import { getDilutionSuggestion, generateDilutionWarning } from '@/utils/dilutionHelper';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 const FASTAP_VOL = 1; // µL
 
 function calcMix(dnaConc, desiredDna, totalVol, enzymeVol, numEnzymes, enzymeType, isVector = false, autoDilute = false, minVol = 0.5) {
-  const rawDnaVol = parseFloat(desiredDna) / parseFloat(dnaConc);
+  const c = parseFloat(dnaConc);
+  const m = parseFloat(desiredDna);
+  const tv = parseFloat(totalVol);
+  if (isNaN(c) || isNaN(m) || isNaN(tv) || c <= 0 || m <= 0 || tv <= 0) {
+    return null;
+  }
+  const rawDnaVol = m / c;
   const dilution = autoDilute ? getDilutionSuggestion(dnaConc, desiredDna, parseFloat(minVol) || 0.5) : null;
   const dnaVolume = dilution ? parseFloat(dilution.newVol) : rawDnaVol;
-  const bufferVol = parseFloat(totalVol) / 10;
-  const totalEnzymeVol = numEnzymes * parseFloat(enzymeVol);
+  const bufferVol = tv / 10;
+  const totalEnzymeVol = numEnzymes * (parseFloat(enzymeVol) || 0);
   const fastApVol = isVector ? FASTAP_VOL : 0;
-  const waterVol = parseFloat(totalVol) - dnaVolume - bufferVol - totalEnzymeVol - fastApVol;
-  return { dnaVolume, bufferVol, totalEnzymeVol, waterVol, isValid: waterVol >= 0, dnaLow: !!dilution, fastApVol, dilution, minVol };
+  const totalUsedVol = dnaVolume + bufferVol + totalEnzymeVol + fastApVol;
+  const waterVol = tv - totalUsedVol;
+  const isDnaExceedsTotal = dnaVolume > tv;
+  const isOverflow = waterVol < -0.005 || isDnaExceedsTotal;
+
+  return {
+    dnaVolume,
+    bufferVol,
+    totalEnzymeVol,
+    waterVol,
+    totalUsedVol,
+    isValid: !isOverflow,
+    isOverflow,
+    isDnaExceedsTotal,
+    dnaLow: !!dilution,
+    fastApVol,
+    dilution,
+    minVol
+  };
 }
 
 // Number input that blocks scroll and allows only typing/arrows
@@ -424,9 +448,19 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                   {results ? (
                     <div className="space-y-1 bg-white dark:bg-slate-900 p-4 rounded-lg" ref={singleTableRef}>
                       {!results.isValid && (
-                        <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg text-amber-700 dark:text-amber-400 text-sm mb-2">
-                          ⚠ Volumes exceed total. Reduce DNA amount or increase total volume.
-                        </div>
+                        <Card className="border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 shadow-none mb-3 rounded-xl">
+                          <CardContent className="p-3 space-y-1">
+                            <div className="flex items-center gap-1.5 font-bold text-red-700 dark:text-red-400 text-xs mb-1">
+                              <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              <span>Volume Exceeded Warning</span>
+                            </div>
+                            <p className="text-xs font-medium text-red-700 dark:text-red-300 pl-5">
+                              {results.isDnaExceedsTotal
+                                ? `Required DNA volume (${results.dnaVolume.toFixed(2)} µL) exceeds the total reaction volume (${totalVolume} µL). Reduce the desired DNA amount or use a higher concentration DNA stock.`
+                                : `Total component volume (${results.totalUsedVol.toFixed(2)} µL) exceeds the total reaction volume (${totalVolume} µL). Reduce DNA amount or increase total volume.`}
+                            </p>
+                          </CardContent>
+                        </Card>
                       )}
                       <table className="w-full text-sm">
                         <thead>
@@ -450,9 +484,23 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                               </td>
                             </tr>
                           ))}
-                          <tr className="border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
-                            <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-100">Total</td>
-                            <td className="py-2 px-3 text-right font-bold text-slate-800 dark:text-slate-100">{Number(parseFloat(totalVolume).toFixed(2))}µL</td>
+                          <tr className={`border-t-2 border-slate-300 dark:border-slate-600 ${!results.isValid ? 'bg-red-50/50 dark:bg-red-950/30 text-red-700 dark:text-red-400' : 'bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-100'}`}>
+                            <td className="py-2 px-3 font-bold">Total</td>
+                            <td className={`py-2 px-3 text-right font-bold ${!results.isValid ? 'text-red-600 dark:text-red-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                              <span>{Number(parseFloat(totalVolume).toFixed(2))}µL</span>
+                              {!results.isValid && (
+                                <TooltipProvider>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-red-500 text-red-500 font-bold text-[8px] ml-1 flex-shrink-0 cursor-default align-middle">!</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent className="max-w-[240px] text-xs">
+                                      <p>{results.isDnaExceedsTotal ? `DNA volume (${results.dnaVolume.toFixed(2)} µL) exceeds total volume.` : `Total volume exceeds ${totalVolume} µL.`}</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </td>
                           </tr>
                         </tbody>
                       </table>
@@ -717,6 +765,21 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                             </CardContent>
                           </Card>
                         )}
+                        {batchResults.some(r => !r.isValid) && (
+                          <Card className="border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/20 shadow-none mb-3 rounded-xl">
+                            <CardContent className="p-3 space-y-1.5">
+                              <div className="flex items-center gap-1.5 font-bold text-red-700 dark:text-red-400 text-xs mb-1">
+                                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+                                <span>Volume Exceeded Warning</span>
+                              </div>
+                              {batchResults.filter(r => !r.isValid).map(r => (
+                                <div key={r.id} className="text-xs font-medium text-red-700 dark:text-red-300 pl-5">
+                                  <strong>{r.name}</strong>: {r.isDnaExceedsTotal ? `Required DNA volume (${r.dnaVolume.toFixed(2)} µL) exceeds total volume (${batchTotalVol} µL).` : `Total component volume (${r.totalUsedVol.toFixed(2)} µL) exceeds total volume (${batchTotalVol} µL).`}
+                                </div>
+                              ))}
+                            </CardContent>
+                          </Card>
+                        )}
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="bg-blue-50 dark:bg-blue-900/30">
@@ -782,7 +845,23 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                             )}
                             <tr className="border-t-2 border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50">
                               <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-100">Total</td>
-                              {batchResults.map((_, i) => <td key={i} className="text-right py-2 px-3 font-bold text-slate-800 dark:text-slate-100">{Number(batchTotalVol)}µL</td>)}
+                              {batchResults.map((r, i) => (
+                                <td key={i} className={`text-right py-2 px-3 font-bold ${!r.isValid ? 'text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/30' : 'text-slate-800 dark:text-slate-100'}`}>
+                                  <span>{Number(batchTotalVol)}µL</span>
+                                  {!r.isValid && (
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-red-500 text-red-500 font-bold text-[8px] ml-1 flex-shrink-0 cursor-default align-middle">!</span>
+                                        </TooltipTrigger>
+                                        <TooltipContent className="max-w-[220px] text-xs">
+                                          <p>{r.isDnaExceedsTotal ? `DNA volume (${r.dnaVolume.toFixed(2)} µL) exceeds ${batchTotalVol} µL.` : `Total volume exceeds ${batchTotalVol} µL.`}</p>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
+                                  )}
+                                </td>
+                              ))}
                             </tr>
                             <tr className="border-t border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30">
                               <td className="py-2 px-3 font-semibold text-slate-700 dark:text-slate-200">DNA Mass (ng)</td>

@@ -112,10 +112,21 @@ export default function ProtocolAIChat({ historyData, settings, user }) {
     const file = e.target.files[0];
     if (!file) return;
     setUploadingFile(true);
-    const { file_url } = await db.integrations.Core.UploadFile({ file });
-    const isImage = file.type.startsWith('image/');
-    setAttachedFiles(prev => [...prev, { name: file.name, url: file_url, type: isImage ? 'image' : 'file' }]);
-    setUploadingFile(false);
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const file_url = reader.result;
+        const isImage = file.type.startsWith('image/');
+        setAttachedFiles(prev => [...prev, { name: file.name, url: file_url, type: isImage ? 'image' : 'file' }]);
+        setUploadingFile(false);
+      };
+      reader.onerror = () => {
+        setUploadingFile(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      setUploadingFile(false);
+    }
     e.target.value = '';
   };
 

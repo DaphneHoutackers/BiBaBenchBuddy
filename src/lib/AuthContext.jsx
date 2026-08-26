@@ -97,7 +97,7 @@ export const AuthProvider = ({ children }) => {
       window.location.hash.includes('error=') ||
       window.location.search.includes('code=')
     );
-    const timeoutDuration = isOAuthCallback ? 15000 : 2000;
+    const timeoutDuration = isOAuthCallback ? 15000 : 10000;
 
     async function initializeAuth() {
       try {
@@ -125,7 +125,19 @@ export const AuthProvider = ({ children }) => {
           console.warn('Initial session fetch error/timeout:', error);
         }
 
-        const currentUser = session?.user ?? null;
+        let effectiveSession = session;
+        if (!effectiveSession) {
+          try {
+            const rawStored = localStorage.getItem('bibabenchbuddy-auth');
+            if (rawStored) {
+              const parsed = JSON.parse(rawStored);
+              if (parsed?.user) effectiveSession = parsed;
+              else if (parsed?.currentSession?.user) effectiveSession = parsed.currentSession;
+            }
+          } catch {}
+        }
+
+        const currentUser = effectiveSession?.user ?? null;
         setUser(currentUser);
 
         // Additional recovery detection: check if this session came from a recovery flow
@@ -212,7 +224,7 @@ export const AuthProvider = ({ children }) => {
     setProfile(null);
     try {
       localStorage.removeItem('bibabenchbuddy-auth');
-    } catch (e) {}
+    } catch {}
 
     if (supabase) {
       supabase.auth.signOut().catch((err) => {
