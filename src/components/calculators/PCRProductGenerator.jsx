@@ -426,7 +426,7 @@ export default function PCRProductGenerator() {
         {/* Right Card: PCR Product Results or Empty State */}
         <div className="flex flex-col h-full">
           {result ? (
-            <Card className="flex flex-col h-full border-0 shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900/60 dark:to-slate-800/40 border border-slate-200 dark:border-slate-800">
+            <Card className="flex flex-col h-full shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-slate-900/60 dark:to-slate-800/40 border border-slate-200 dark:border-slate-800">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">PCR Product</CardTitle>
               </CardHeader>
@@ -625,7 +625,7 @@ export default function PCRProductGenerator() {
 
       {/* Bottom Full-Width Card: Template Sequence Map */}
       {template && (
-        <Card className="border-0 shadow-sm bg-white/80 backdrop-blur border border-slate-100 dark:border-slate-850">
+        <Card className="shadow-sm bg-white/80 backdrop-blur border border-slate-100 dark:border-slate-850">
           <CardHeader className="pb-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
@@ -704,6 +704,11 @@ export default function PCRProductGenerator() {
 
             {/* Modal Content */}
             <div className="p-5 overflow-y-auto flex-1 space-y-4 min-h-0">
+              {libraryAlert && (
+                <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs border border-emerald-200 dark:border-emerald-800">
+                  {libraryAlert}
+                </div>
+              )}
               {libraryItems.length === 0 ? (
                 <div className="text-center py-10 space-y-3">
                   <Folder className="w-12 h-12 text-slate-350 dark:text-slate-700 mx-auto" />

@@ -495,7 +495,7 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
                         placeholder="e.g. 180.16"
                         value={mw}
                         onChange={e => setMw(e.target.value)}
-                        className="h-8 border-amber-300 bg-white dark:bg-white/5 dark:bg-slate-900/30 focus:border-amber-500 focus:ring-amber-500"
+                        className="h-8 border-amber-300 bg-white dark:bg-slate-900/30 focus:border-amber-500 focus:ring-amber-500"
                       />
                       <span className="text-xs text-amber-600 whitespace-nowrap font-medium">g/mol</span>
                     </div>
