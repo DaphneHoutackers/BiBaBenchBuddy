@@ -1176,7 +1176,7 @@ export default function Home() {
                 <ScienceJoke isDark={isDark} />
               </div>
 
-              <div className="grid grid-cols-1 gap-8 min-[1080px]:grid-cols-[minmax(340px,.75fr)_minmax(600px,1.25fr)]">
+              <div className="grid grid-cols-1 gap-8 min-[1080px]:grid-cols-[minmax(360px,.88fr)_minmax(520px,1.12fr)]">
                 <div className="grid content-start gap-6">
                   <div className="flex flex-col space-y-4">
                     <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>Calculators</h3>
