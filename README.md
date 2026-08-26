@@ -1,146 +1,121 @@
-# BiBaBenchBuddy
+# BiBaBench Buddy
 
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest" height="20">
-<a href="https://img.shields.io/github/downloads/DaphneHoutackers/BiBaBench-Buddy/total?style=for-the-badge&logo=github&label=downloads" height="20">
-<a href="https://bi-ba-bench-buddy.vercel.app/">
-  <img src="https://img.shields.io/badge/Open-Webapp-BF5FFF?style=for-the-badge&logo=vercel&logoColor=white" height="20" />
-</a>
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg">
-  <img src="https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white" height="20" />
-</a>
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe">
-  <img src="https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white" height="20" />
-</a>
-<a href="https://buymeacoffee.com/daphnewoodpecker">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="20">
-</a>
+<div align="left">
+  <a href="https://bi-ba-bench-buddy.vercel.app/">
+    <img src="https://img.shields.io/badge/Open-Webapp-BF5FFF?style=for-the-badge&logo=vercel&logoColor=white" height="20" alt="Open webapp" />
+  </a>
+  <a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg">
+    <img src="https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white" height="20" alt="Download macOS" />
+  </a>
+  <a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe">
+    <img src="https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white" height="20" alt="Download Windows" />
+  </a>
+  <a href="https://img.shields.io/github/downloads/DaphneHoutackers/BiBaBench-Buddy/total?style=for-the-badge&logo=github&label=downloads">
+    <img src="https://img.shields.io/github/downloads/DaphneHoutackers/BiBaBench-Buddy/total?style=for-the-badge&logo=github&label=downloads" height="20" alt="Total downloads" />
+  </a>
+</div>
 
-BiBaBenchBuddy is a desktop and web application designed for molecular biology workflows. It provides practical tools for calculations, visualization, and protocol support, helping streamline routine lab work and reduce manual errors.
+BiBaBench Buddy is a desktop and web app for molecular biology workflows. It combines lab calculators, visualization tools, protocol support and utility tools in one workspace.
 
 <p align="center">
   <img src="docs/app-screenshot.png" alt="BiBaBench Buddy screenshot" width="900">
 </p>
 
-## Features
+## 🚀 Features
 
-- DNA digestion calculator
-- Ligation calculator
-- Gibson calculator
-- PCR setup & optimization tools
-- Dilution and concentration calculators
-- Gel electrophoresis and western blot simulator
-- Buffer library & calculator
-- Clean, fast, mobile-friendly interface
+### 🧬 Calculators
+- **Digestion**: single and batch restriction digest calculations
+- **Ligation**: single and batch ligation setup
+- **Gibson Assembly**: single and batch fragment assembly planning
+- **PCR toolkit**:
+  - PCR Mix calculator
+  - Ta (annealing temperature) calculator
+  - OE-PCR planner
+  - PCR product sequence generator
+- **Dilutions**:
+  - C₁V₁
+  - sample dilution
+  - add-to-volume
+  - serial dilution
+- **Protein tools**:
+  - BCA assay calculator
+  - SDS-PAGE sample prep helper
 
-## Use & Installation
+### 🧪 Lab & visualization
+- **Gel Simulator**:
+  - DNA gel simulation
+  - Western blot migration mode
+- **Sequence Analyzer**:
+  - sequence/plasmid analysis
+  - map + feature inspection
+  - alignment support
+  - sequence library integration
+- **Plate Labeler**:
+  - 24/48/96/384 well plate layouts
+  - coloring, labeling and export/copy support
 
-### 🌐 WebApp [Open webapp ↗](https://bi-ba-bench-buddy.vercel.app/)
+### 🧰 General lab tools
+- **Buffer & Medium Builder**: create, organize and reuse buffer/media recipes
+- **Protocols**:
+  - protocol library
+  - AI protocol generator
+- **Notes**: rich text lab notes with folders
+- **Agenda**: planning tool for experiments and deadlines
 
-The latest webapp version is accessible in any browser at:  
-**[https://bi-ba-bench-buddy.vercel.app/](https://bi-ba-bench-buddy.vercel.app/)**
+### 🤖 AI features
+- **AI Lab Assistant**: general molecular biology / calculation chat assistant
+- **AI Buffer Assistant**: conversational buffer-recipe assistant inside the buffer workflow
 
-### 💻 Desktop Application [![releases](https://img.shields.io/github/v/release/DaphneHoutackers/BiBaBench-Buddy)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases)
+### ⚙️ Workflow features
+- Login/sync support (Email or GitHub)
+- Per-user settings and API key configuration (Gemini/OpenAI/Groq/OpenRouter/Anthropic/DeepSeek)
+- Tool/tab history and restoration
+- Theme and appearance customization
 
-For a standalone experience with native performance:
+## 🌐 Use & installation
 
-- **macOS version:**  
-  [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg)
-- **Windows version:**  
-  [![Download for Windows](https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe)
-- **All versions & changelog:**  
-  [Releases overview](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases)
+### Web app
+Open directly in browser:
 
-#### ⚠️ macOS: “App is damaged and can’t be opened” warning? ⚠️
+**https://bi-ba-bench-buddy.vercel.app/**
 
-If you see the warning  
-‘BiBaBench-Buddy.app is damaged and can’t be opened. You should move it to the Trash’  
-when opening the app for the first time, run the following command in your Terminal:
+### Desktop app
+Download the latest release:
+
+- **macOS (Apple Silicon)**:  
+  https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg
+- **Windows**:  
+  https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe
+- **All releases**:  
+  https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases
+
+#### macOS warning: “App is damaged and can’t be opened”
+If macOS blocks the app on first launch, run:
 
 ```bash
 xattr -cr "/Applications/BiBaBench Buddy.app"
 ```
 
-After running this, try opening the app again. The warning should now be resolved.
-
-## Usage
-
-### 1. Setup & Configuration
-
-Click the **Settings** icon in the top right:
-
-- **Sync:** Log in with **Email** or **GitHub** to keep your sessions and settings synced across your laptop and web browser.
-- **AI Settings:** Paste your API keys (e.g., Google Gemini, OpenAI, or Groq) to unlock the AI Buffer Assistant and smarter protocol generation.
-- **Appearance:** Choose from various themes, including _Modern Dark_, _Glass MacOS_, and curated styles like _pretty pink💕_.
-
-![alt text](<Kapture 2026-03-19 at 03.03.31.gif>)
-
-## 🚀 Features
-
-🧬 **Calculators (Lab Math)**
-
-- **Digestion**: Batch process restriction digests with a vast library of NEB and Thermo enzymes.
-- **Ligation**: Calculate optimal vector-to-insert molar ratios for standard ligations.
-- **Gibson**: Multi-fragment assembly planning with molarity and volume calculations.
-- **Protein**:
-  - **Protein Concentration**: Accurately determine protein concentration using A280 readings, MW, and extinction coefficients.
-  - **Sample preparation**: automatically creates the sample preparation mix table for the measured protein samples in the Protein Concentration tool.
-- **PCR Calculator**:
-  - **PCR Mix**: Calculate mastermixes for multiple samples with different template concentrations.
-  - **Ta Calculator**: Advanced annealing temperature prediction using the nearest-neighbor model. Provides Tm, MW, and GC content analysis.
-  - **OE-PCR**: Plan Overlap Extension PCRs for site-directed mutagenesis or fragment joining.
-  - **Product Sequence**: Automatically generate the final DNA sequence based on your primers and template.
-- **Dilution**: Simple or serial dilution calculations with molarity or percentage support.
-
-🧪 **Lab & Visualization**
-
-- **Gel Simulator**: Simulate agarose gels. Manually enter band sizes or paste your DNA sequence and select enzymes to visualize the fragments on gel automatically. Mark bands for extraction directly on the gel.
-- **Western Blot**: Predict protein migration patterns. Select specific PAGE gel types and use specialized protein ladders.
-- **Plasmid Analyzer**:
-  - **Map Visualization**: View circular or linear plasmid maps with auto-detection of common features and ORFs.
-  - **Alignment**: Align two sequences to identify mismatches
-- **Image Annotator (BETA)**: Upload your own gel or blot images. Add annotations, arrows, and lane labels.
-
-🤖 **Protocols & AI**
-
-- **General AI Assistant**: Available via the top-bar icon to answer lab-related questions or explain tool functionalities.
-- - **Protocol Library**: A searchable database of standard molecular biology protocols that can be customized and exported.
-- **AI Buffer Assistant**: A conversational AI optimized for lab chemistry. Describe the buffer you need (e.g., "1X TAE with 10mM EDTA"), and it will generate a recipe you can save to your history.
-
-## 🧭 Planned Features
-
-- [ ] Gibson tool
-- [ ] Primer designer tool
-- [ ] General extra's for all tools
-
-## 📄 Development
-
-If you wish to run this locally:
+## 🛠️ Development
 
 ```bash
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
+git clone https://github.com/DaphneHoutackers/BiBaBench-Buddy.git
+cd BiBaBench-Buddy
 npm install
-npm run dev #web
-npm run app:dev #desktop
+npm run dev        # web app
+npm run app:build  # desktop build
 ```
 
-## ⚠️ Known Issues
-
-The following issues are known:
-
-- Ta Calculator - The Annealing Temperature (Ta) logic is currently being refined and may not be 100% accurate for high-GC or complex primer pairs.
-- Image Annotator - This tool is in active beta. While basic labeling and exporting work, some advanced selection and scaling features may still behave unexpectedly.
-- Sequence Analyzer - The feature labeling is not very nicely visualized yet.
+## ⚠️ Known issues
+- Ta calculator logic is still being refined for some high-GC/complex primer scenarios.
+- Sequence Analyzer feature labeling/visualization can still be improved in some cases.
 
 ## 📜 Changelog
-
-Zie: [CHANGELOG.md](./CHANGELOG.md)
-Of bekijk [Releases](../../releases)
+- Releases overview: https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases
 
 ## ☕ Support
-
-If you like this app, feel free to buy me a coffee :)
+If you like this app, you can support the project:
 
 <a href="https://buymeacoffee.com/daphnewoodpecker" target="_blank">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50" alt="Buy Me A Coffee">
 </a>
