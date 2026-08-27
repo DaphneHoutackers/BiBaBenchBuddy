@@ -1119,7 +1119,7 @@ const newEmptyTab = (name = '') => ({
 });
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export default function PlasmidAnalyzer({ historyData, isActive }) {
+export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const { history, user, isRemoteLoading, addHistoryItem } = useHistory();
   const isMobile = useIsMobile();
   const [toolTab, setToolTab] = useState('analyzer');
@@ -4500,7 +4500,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
 
       {toolTab === 'alignment' && (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
-          <AlignmentView library={library} seq={seq} seqName={seqName} />
+          <AlignmentView key={`alignment-${activeTabId}`} library={library} seq={seq} seqName={seqName} features={features} language={settings?.language || 'en'} storageScope={user?.id || 'guest'} draftId={activeTabId} />
         </div>
       )}
 
@@ -4840,7 +4840,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                   </div>
                   <button
                     onClick={() => setViewMode('alignment')}
-                    className={`flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold shadow-sm flex-shrink-0 ${viewMode === 'alignment' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-500 hover:text-teal-700'}`}
+                    className={`flex h-8 items-center gap-1 rounded-lg border px-2.5 text-xs font-bold shadow-sm flex-shrink-0 ${viewMode === 'alignment' ? 'border-slate-300 bg-white text-slate-800' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
                     title="Alignment"
                   >
                     <span className="text-[13px] leading-none">≡</span>
@@ -5017,7 +5017,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
                 )}
                 {viewMode === 'alignment' && (
                   <div className="h-full overflow-auto p-4">
-                    <AlignmentView library={library} seq={seq} seqName={seqName} />
+                    <AlignmentView key={`alignment-${activeTabId}`} library={library} seq={seq} seqName={seqName} features={features} language={settings?.language || 'en'} storageScope={user?.id || 'guest'} draftId={activeTabId} />
                   </div>
                 )}
                 

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Image, Check } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
-const CopyImageButton = forwardRef(({ targetRef, label = "Copy Image", ...props }, ref) => {
+const CopyImageButton = forwardRef(({ targetRef, label = "Copy Image", copiedLabel = 'Copied!', capturingLabel = 'Capturing...', ...props }, ref) => {
   const [copied, setCopied] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
 
@@ -144,7 +144,7 @@ const CopyImageButton = forwardRef(({ targetRef, label = "Copy Image", ...props 
       {...props}
     >
       {copied ? <Check className="w-4 h-4 text-green-500" /> : <Image className="w-4 h-4" />}
-      {copied ? 'Copied!' : (isCapturing ? 'Capturing...' : label)}
+      {copied ? copiedLabel : (isCapturing ? capturingLabel : label)}
     </Button>
   );
 });
