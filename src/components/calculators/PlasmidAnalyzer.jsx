@@ -3544,6 +3544,80 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
     }
   };
 
+  useEffect(() => {
+    window.electronAPI?.setMenuContext?.({ tool: 'sequence-analyzer', hasNote: false });
+    return () => {
+      window.electronAPI?.setMenuContext?.({ tool: null, hasNote: false });
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!window.electronAPI?.onFileAction) return;
+    const unsub = window.electronAPI.onFileAction((action) => {
+      if (action === 'save-as') {
+        const newName = window.prompt('Save sequence as:', `${seqName || 'Sequence'} copy`);
+        if (newName !== null && newName.trim()) {
+          const now = new Date().toISOString();
+          const entry = {
+            id: `file_${Date.now()}`,
+            name: newName.trim(),
+            type: 'file',
+            sequence: seq,
+            features: features || [],
+            primers: primers || [],
+            sequenceColors: sequenceColors || [],
+            isCircular: isCircular ?? true,
+            selectedEnzymes: selectedEnzymes || {},
+            dateAdded: now,
+            dateEdited: now,
+            metadata: defaultPlasmidMetadata(),
+          };
+          const next = [entry, ...library];
+          setLibrary(next);
+          saveUserLib(user?.id, next);
+          loadFromLibrary(entry);
+        }
+      } else if (action === 'duplicate') {
+        if (activeEntryId) {
+          duplicateLibraryItem(activeEntryId);
+        } else {
+          const now = new Date().toISOString();
+          const entry = {
+            id: `file_${Date.now()}`,
+            name: `${seqName || 'Sequence'} copy`,
+            type: 'file',
+            sequence: seq,
+            features: features || [],
+            primers: primers || [],
+            sequenceColors: sequenceColors || [],
+            isCircular: isCircular ?? true,
+            selectedEnzymes: selectedEnzymes || {},
+            dateAdded: now,
+            dateEdited: now,
+            metadata: defaultPlasmidMetadata(),
+          };
+          const next = [entry, ...library];
+          setLibrary(next);
+          saveUserLib(user?.id, next);
+          loadFromLibrary(entry);
+        }
+      } else if (action === 'export-png') {
+        exportPNG();
+      } else if (action === 'export-fasta') {
+        exportFasta();
+      } else if (action === 'export-genbank') {
+        exportGenBank();
+      } else if (action === 'delete') {
+        if (activeEntryId) {
+          if (window.confirm(`Are you sure you want to delete "${seqName || 'this sequence'}"?`)) {
+            deleteFromLibrary(activeEntryId);
+          }
+        }
+      }
+    });
+    return unsub;
+  }, [seq, seqName, features, primers, sequenceColors, isCircular, selectedEnzymes, activeEntryId, library, user?.id]);
+
   const handleFeatureClick = (e, feature, idx) => handleMapSelection(e, feature.kind || 'feature', feature, idx);
   const handleFeatureHover = (e, feature, idx) => showHoverPopup(e, feature.kind || 'feature', feature, idx);
   const handleFeatureContextMenu = (e, feature, idx) => openMapContextPopup(e, feature.kind || 'feature', feature, idx);

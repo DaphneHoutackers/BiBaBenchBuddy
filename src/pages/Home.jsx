@@ -432,6 +432,9 @@ export default function Home() {
         localStorage.removeItem('bibabenchbuddy_active_tool');
       }
     } catch {}
+    if (active !== 'notes') {
+      window.electronAPI?.setMenuContext?.({ tool: active || 'home', hasNote: false });
+    }
   }, [active]);
 
   useEffect(() => {
