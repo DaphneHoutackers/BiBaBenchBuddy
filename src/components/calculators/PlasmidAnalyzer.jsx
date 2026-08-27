@@ -3544,12 +3544,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
     }
   };
 
-  useEffect(() => {
-    window.electronAPI?.setMenuContext?.({ tool: 'sequence-analyzer', hasNote: false });
-    return () => {
-      window.electronAPI?.setMenuContext?.({ tool: null, hasNote: false });
-    };
-  }, []);
+
 
   useEffect(() => {
     if (!window.electronAPI?.onFileAction) return;

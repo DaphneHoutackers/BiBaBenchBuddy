@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useHistory } from '@/context/HistoryContext';
 import {
   Activity,
   AlignCenter,
@@ -248,7 +249,8 @@ function extractListItemAsBlock(li, targetTag) {
   clone.querySelector('input')?.remove();
   const innerHtml = clone.innerHTML;
 
-  const normalizedTag = targetTag.toLowerCase().replace(/[<>]/g, '');
+  const isTitle = targetTag === 'title';
+  const normalizedTag = isTitle ? 'h1' : targetTag.toLowerCase().replace(/[<>]/g, '');
   const newBlock = document.createElement(normalizedTag);
   newBlock.innerHTML = innerHtml;
   newBlock.style.fontSize = '';
@@ -256,7 +258,7 @@ function extractListItemAsBlock(li, targetTag) {
   newBlock.style.marginLeft = '';
   newBlock.style.paddingLeft = '';
   newBlock.style.textIndent = '';
-  newBlock.className = '';
+  newBlock.className = isTitle ? 'note-title' : '';
   if (normalizedTag === 'p') {
     newBlock.querySelectorAll('h1, h2, h3, h4, b, strong').forEach(b => {
       b.replaceWith(...b.childNodes);
@@ -291,7 +293,8 @@ function extractListItemAsBlock(li, targetTag) {
 function setBlockFormat(editorRef, targetTag, onContentChange, onBeforeCommand) {
   onBeforeCommand?.();
   editorRef.current?.focus();
-  const normalizedTag = targetTag.toLowerCase().replace(/[<>]/g, '');
+  const isTitle = targetTag === 'title';
+  const normalizedTag = isTitle ? 'h1' : targetTag.toLowerCase().replace(/[<>]/g, '');
 
   const selection = window.getSelection();
   if (selection && selection.rangeCount > 0) {
@@ -301,7 +304,7 @@ function setBlockFormat(editorRef, targetTag, onContentChange, onBeforeCommand) 
 
     const li = node?.closest('li');
     if (li && editorRef.current?.contains(li)) {
-      extractListItemAsBlock(li, normalizedTag);
+      extractListItemAsBlock(li, targetTag);
       onContentChange?.();
       return;
     }
@@ -316,7 +319,9 @@ function setBlockFormat(editorRef, targetTag, onContentChange, onBeforeCommand) 
         newElem.querySelectorAll('h1, h2, h3, h4').forEach(h => {
           h.replaceWith(...h.childNodes);
         });
-        if (normalizedTag === 'p') {
+        if (isTitle) {
+          newElem.className = 'note-title';
+        } else if (normalizedTag === 'p') {
           newElem.style.fontSize = '';
           newElem.style.fontWeight = '';
           newElem.style.marginLeft = '';
@@ -326,19 +331,27 @@ function setBlockFormat(editorRef, targetTag, onContentChange, onBeforeCommand) 
           newElem.querySelectorAll('b, strong').forEach(b => {
             b.replaceWith(...b.childNodes);
           });
+        } else {
+          newElem.className = '';
         }
         block.replaceWith(newElem);
         placeCaret(newElem);
-      } else if (normalizedTag === 'p') {
-        block.style.fontSize = '';
-        block.style.fontWeight = '';
-        block.style.marginLeft = '';
-        block.style.paddingLeft = '';
-        block.style.textIndent = '';
-        block.className = '';
-        block.querySelectorAll('h1, h2, h3, h4, b, strong').forEach(b => {
-          b.replaceWith(...b.childNodes);
-        });
+      } else {
+        if (isTitle) {
+          block.className = 'note-title';
+        } else if (normalizedTag === 'h1') {
+          block.classList.remove('note-title');
+        } else if (normalizedTag === 'p') {
+          block.style.fontSize = '';
+          block.style.fontWeight = '';
+          block.style.marginLeft = '';
+          block.style.paddingLeft = '';
+          block.style.textIndent = '';
+          block.className = '';
+          block.querySelectorAll('h1, h2, h3, h4, b, strong').forEach(b => {
+            b.replaceWith(...b.childNodes);
+          });
+        }
       }
     }
   }
@@ -777,7 +790,15 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
     setIsInsideTable(inTable);
 
     const block = node?.closest('h1, h2, h3, h4, p, blockquote');
-    const tagName = block ? block.tagName.toLowerCase() : 'p';
+    let tagName = 'p';
+    if (block) {
+      const tag = block.tagName.toLowerCase();
+      if (tag === 'h1') {
+        tagName = block.classList.contains('note-title') ? 'title' : 'h1';
+      } else {
+        tagName = tag;
+      }
+    }
     setCurrentBlock(tagName);
 
     const range = selection.getRangeAt(0);
@@ -827,30 +848,30 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
   if (!position) return null;
 
   const headingLabelMap = isNl ? {
-    h1: 'Titel',
-    h2: 'Koptekst',
-    h3: 'Subkop',
-    h4: 'Kop 3',
+    title: 'Titel',
+    h1: 'Koptekst',
+    h2: 'Subkop',
+    h3: 'Kop 3',
     p: 'Hoofdtekst',
   } : {
-    h1: 'Title',
-    h2: 'Heading',
-    h3: 'Subheading',
-    h4: 'Heading 3',
+    title: 'Title',
+    h1: 'Heading',
+    h2: 'Subheading',
+    h3: 'Heading 3',
     p: 'Normal',
   };
 
   const headingOptions = isNl ? [
-    ['h1', 'Titel', '⇧⌘T'],
-    ['h2', 'Koptekst', '⇧⌘H'],
-    ['h3', 'Subkop', '⇧⌘J'],
-    ['h4', 'Kop 3', '⇧⌘I'],
+    ['title', 'Titel', '⇧⌘T'],
+    ['h1', 'Koptekst', '⇧⌘H'],
+    ['h2', 'Subkop', '⇧⌘J'],
+    ['h3', 'Kop 3', '⇧⌘I'],
     ['p', 'Hoofdtekst', '⇧⌘B'],
   ] : [
-    ['h1', 'Title', '⇧⌘T'],
-    ['h2', 'Heading', '⇧⌘H'],
-    ['h3', 'Subheading', '⇧⌘J'],
-    ['h4', 'Heading 3', '⇧⌘I'],
+    ['title', 'Title', '⇧⌘T'],
+    ['h1', 'Heading', '⇧⌘H'],
+    ['h2', 'Subheading', '⇧⌘J'],
+    ['h3', 'Heading 3', '⇧⌘I'],
     ['p', 'Normal', '⇧⌘B'],
   ];
 
@@ -2250,7 +2271,8 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
   );
 }
 
-export default function NotesTool({ settings }) {
+export default function NotesTool({ settings, historyData }) {
+  const { addHistoryItem } = useHistory();
   const [notes, setNotes] = useStoredState('biba_notes_v1', []);
   const [folders, setFolders] = useStoredState('biba_note_folders_v2', []);
   const [selected, setSelected] = useStoredState('biba_notes_selected_id', null);
@@ -2310,6 +2332,33 @@ export default function NotesTool({ settings }) {
   const historyTimerRef = useRef(null);
   const historyRef = useRef({ entries: [], index: -1, lastType: null, time: 0 });
   const note = notes.find(n => n.id === selected);
+
+  // Restore note if opened via history
+  useEffect(() => {
+    if (historyData?.data?.noteId) {
+      setSelected(historyData.data.noteId);
+    }
+  }, [historyData, setSelected]);
+
+  // Record active note session to history
+  useEffect(() => {
+    if (!selected) return;
+    const currentNote = notes.find(n => n.id === selected);
+    if (!currentNote || currentNote.deleted) return;
+    const isNl = settings?.language === 'nl';
+    const timer = setTimeout(() => {
+      addHistoryItem({
+        toolId: 'notes',
+        toolName: isNl ? 'Notities' : 'Notes',
+        data: {
+          noteId: currentNote.id,
+          preview: currentNote.title || (isNl ? 'Naamloze notitie' : 'Untitled note'),
+          folderId: currentNote.folderId,
+        }
+      });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [selected, note?.title, addHistoryItem, settings?.language]);
 
   useEffect(() => {
     const handleOutside = (e) => {
@@ -2877,6 +2926,8 @@ export default function NotesTool({ settings }) {
     editorRef.current.focus();
     switch (format) {
       case 'title':
+        setBlockFormat(editorRef, 'title', saveContent, () => commitHistory('command'));
+        break;
       case 'h1':
         setBlockFormat(editorRef, 'h1', saveContent, () => commitHistory('command'));
         break;
@@ -3002,14 +3053,7 @@ export default function NotesTool({ settings }) {
     }
   };
 
-  // Sync menu bar context (Opmaak & File menu) with Electron
-  useEffect(() => {
-    const hasNote = Boolean(selected && note && !note.deleted);
-    window.electronAPI?.setMenuContext?.({ tool: 'notes', hasNote });
-    return () => {
-      window.electronAPI?.setMenuContext?.({ tool: null, hasNote: false });
-    };
-  }, [selected, note]);
+
 
   // Listen to menu bar IPC if in Electron
   useEffect(() => {

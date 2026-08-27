@@ -12,109 +12,67 @@ if (process.platform === 'win32' && process.argv.includes('--squirrel-firstrun')
 
 const isDev = !!process.env.VITE_DEV_SERVER_URL;
 
-let currentMenuContext = { tool: null, hasNote: false };
-
-const createMenu = (context = currentMenuContext) => {
-  currentMenuContext = context || { tool: null, hasNote: false };
-  const { tool, hasNote } = currentMenuContext;
-
-  const isNotesActiveWithNote = tool === 'notes' && hasNote;
-  const isSequenceAnalyzer = tool === 'plasmid' || tool === 'sequence-analyzer';
-
-  // Build File menu items dynamically
-  let fileSubmenu = null;
-  if (isNotesActiveWithNote) {
-    fileSubmenu = [
-      {
-        label: 'Save as…',
-        accelerator: 'CmdOrCtrl+S',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'save-as');
-        },
+const createMenu = () => {
+  const fileSubmenu = [
+    {
+      label: 'Save as…',
+      accelerator: 'CmdOrCtrl+S',
+      click: (_menuItem, browserWindow) => {
+        browserWindow?.webContents.send('file-action', 'save-as');
       },
-      {
-        label: 'Duplicate',
-        accelerator: 'CmdOrCtrl+D',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'duplicate');
-        },
+    },
+    {
+      label: 'Duplicate',
+      accelerator: 'CmdOrCtrl+D',
+      click: (_menuItem, browserWindow) => {
+        browserWindow?.webContents.send('file-action', 'duplicate');
       },
-      {
-        label: 'Export',
-        submenu: [
-          {
-            label: 'Markdown (.md)',
-            click: (_menuItem, browserWindow) => {
-              browserWindow?.webContents.send('file-action', 'export-md');
-            },
+    },
+    {
+      label: 'Export',
+      submenu: [
+        {
+          label: 'PDF (.pdf)',
+          accelerator: 'CmdOrCtrl+P',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('file-action', 'export-pdf');
           },
-          {
-            label: 'PDF (.pdf)',
-            accelerator: 'CmdOrCtrl+P',
-            click: (_menuItem, browserWindow) => {
-              browserWindow?.webContents.send('file-action', 'export-pdf');
-            },
-          },
-        ],
-      },
-      { type: 'separator' },
-      {
-        label: 'Delete',
-        accelerator: 'CmdOrCtrl+Backspace',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'delete');
         },
-      },
-    ];
-  } else if (isSequenceAnalyzer) {
-    fileSubmenu = [
-      {
-        label: 'Save as…',
-        accelerator: 'CmdOrCtrl+S',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'save-as');
-        },
-      },
-      {
-        label: 'Duplicate',
-        accelerator: 'CmdOrCtrl+D',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'duplicate');
-        },
-      },
-      {
-        label: 'Export',
-        submenu: [
-          {
-            label: 'PNG Image (.png)',
-            click: (_menuItem, browserWindow) => {
-              browserWindow?.webContents.send('file-action', 'export-png');
-            },
+        {
+          label: 'Markdown (.md)',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('file-action', 'export-md');
           },
-          {
-            label: 'FASTA (.fasta)',
-            click: (_menuItem, browserWindow) => {
-              browserWindow?.webContents.send('file-action', 'export-fasta');
-            },
-          },
-          {
-            label: 'GenBank (.gb)',
-            click: (_menuItem, browserWindow) => {
-              browserWindow?.webContents.send('file-action', 'export-genbank');
-            },
-          },
-        ],
-      },
-      { type: 'separator' },
-      {
-        label: 'Delete',
-        accelerator: 'CmdOrCtrl+Backspace',
-        click: (_menuItem, browserWindow) => {
-          browserWindow?.webContents.send('file-action', 'delete');
         },
+        {
+          label: 'PNG Image (.png)',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('file-action', 'export-png');
+          },
+        },
+        {
+          label: 'FASTA (.fasta)',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('file-action', 'export-fasta');
+          },
+        },
+        {
+          label: 'GenBank (.gb)',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('file-action', 'export-genbank');
+          },
+        },
+      ],
+    },
+    { type: 'separator' },
+    {
+      label: 'Delete',
+      accelerator: 'CmdOrCtrl+Backspace',
+      click: (_menuItem, browserWindow) => {
+        browserWindow?.webContents.send('file-action', 'delete');
       },
-    ];
-  }
+    },
+  ];
 
   const template = [
     {
@@ -131,14 +89,10 @@ const createMenu = (context = currentMenuContext) => {
         { role: 'quit' },
       ],
     },
-    ...(fileSubmenu
-      ? [
-        {
-          label: 'File',
-          submenu: fileSubmenu,
-        },
-      ]
-      : []),
+    {
+      label: 'File',
+      submenu: fileSubmenu,
+    },
     {
       label: 'Edit',
       submenu: [
@@ -151,145 +105,141 @@ const createMenu = (context = currentMenuContext) => {
         { role: 'selectAll', accelerator: 'CmdOrCtrl+A' },
       ],
     },
-    ...(isNotesActiveWithNote
-      ? [
+    {
+      label: 'Opmaak',
+      submenu: [
         {
-          label: 'Opmaak',
+          label: 'Titel',
+          accelerator: 'Shift+CmdOrCtrl+T',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'title');
+          },
+        },
+        {
+          label: 'Koptekst',
+          accelerator: 'Shift+CmdOrCtrl+H',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h1');
+          },
+        },
+        {
+          label: 'Subkop',
+          accelerator: 'Shift+CmdOrCtrl+J',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h2');
+          },
+        },
+        {
+          label: 'Kop 3',
+          accelerator: 'Shift+CmdOrCtrl+I',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h3');
+          },
+        },
+        {
+          label: 'Hoofdtekst',
+          accelerator: 'Shift+CmdOrCtrl+B',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'p');
+          },
+        },
+        {
+          label: 'Met één opmaak',
+          accelerator: 'Shift+CmdOrCtrl+M',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'code');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Opsommingstekenslijst',
+          accelerator: 'Shift+CmdOrCtrl+7',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'bullet');
+          },
+        },
+        {
+          label: 'Genummerde lijst',
+          accelerator: 'Shift+CmdOrCtrl+9',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'number');
+          },
+        },
+        {
+          label: 'Checklist',
+          accelerator: 'Shift+CmdOrCtrl+L',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'checklist');
+          },
+        },
+        {
+          label: 'Markeer als afgevinkt',
+          accelerator: 'Shift+CmdOrCtrl+U',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'toggle-check');
+          },
+        },
+        {
+          label: 'Blokcitaat',
+          accelerator: 'Alt+CmdOrCtrl+\'',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'quote');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Inspringing',
           submenu: [
             {
-              label: 'Titel',
-              accelerator: 'Shift+CmdOrCtrl+T',
+              label: 'Verhoog',
+              accelerator: 'CmdOrCtrl+]',
               click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'title');
+                browserWindow?.webContents.send('note-format', 'indent');
               },
             },
             {
-              label: 'Koptekst',
-              accelerator: 'Shift+CmdOrCtrl+H',
+              label: 'Verlaag',
+              accelerator: 'CmdOrCtrl+[',
               click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'h1');
+                browserWindow?.webContents.send('note-format', 'outdent');
               },
-            },
-            {
-              label: 'Subkop',
-              accelerator: 'Shift+CmdOrCtrl+J',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'h2');
-              },
-            },
-            {
-              label: 'Kop 3',
-              accelerator: 'Shift+CmdOrCtrl+I',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'h3');
-              },
-            },
-            {
-              label: 'Hoofdtekst',
-              accelerator: 'Shift+CmdOrCtrl+B',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'p');
-              },
-            },
-            {
-              label: 'Met één opmaak',
-              accelerator: 'Shift+CmdOrCtrl+M',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'code');
-              },
-            },
-            { type: 'separator' },
-            {
-              label: 'Opsommingstekenslijst',
-              accelerator: 'Shift+CmdOrCtrl+7',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'bullet');
-              },
-            },
-            {
-              label: 'Genummerde lijst',
-              accelerator: 'Shift+CmdOrCtrl+9',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'number');
-              },
-            },
-            {
-              label: 'Checklist',
-              accelerator: 'Shift+CmdOrCtrl+L',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'checklist');
-              },
-            },
-            {
-              label: 'Markeer als afgevinkt',
-              accelerator: 'Shift+CmdOrCtrl+U',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'toggle-check');
-              },
-            },
-            {
-              label: 'Blokcitaat',
-              accelerator: 'Alt+CmdOrCtrl+\'',
-              click: (_menuItem, browserWindow) => {
-                browserWindow?.webContents.send('note-format', 'quote');
-              },
-            },
-            { type: 'separator' },
-            {
-              label: 'Inspringing',
-              submenu: [
-                {
-                  label: 'Verhoog',
-                  accelerator: 'CmdOrCtrl+]',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'indent');
-                  },
-                },
-                {
-                  label: 'Verlaag',
-                  accelerator: 'CmdOrCtrl+[',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'outdent');
-                  },
-                },
-              ],
-            },
-            {
-              label: 'Tekst',
-              submenu: [
-                {
-                  label: 'Lijn links uit',
-                  accelerator: 'CmdOrCtrl+{',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'align-left');
-                  },
-                },
-                {
-                  label: 'Centreer',
-                  accelerator: 'CmdOrCtrl+|',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'align-center');
-                  },
-                },
-                {
-                  label: 'Vul uit',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'align-justify');
-                  },
-                },
-                {
-                  label: 'Lijn rechts uit',
-                  accelerator: 'CmdOrCtrl+}',
-                  click: (_menuItem, browserWindow) => {
-                    browserWindow?.webContents.send('note-format', 'align-right');
-                  },
-                },
-              ],
             },
           ],
         },
-      ]
-      : []),
+        {
+          label: 'Tekst',
+          submenu: [
+            {
+              label: 'Lijn links uit',
+              accelerator: 'CmdOrCtrl+{',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'align-left');
+              },
+            },
+            {
+              label: 'Centreer',
+              accelerator: 'CmdOrCtrl+|',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'align-center');
+              },
+            },
+            {
+              label: 'Vul uit',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'align-justify');
+              },
+            },
+            {
+              label: 'Lijn rechts uit',
+              accelerator: 'CmdOrCtrl+}',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'align-right');
+              },
+            },
+          ],
+        },
+      ],
+    },
     {
       label: 'View',
       submenu: [
@@ -596,8 +546,7 @@ ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
   return { canceled: true };
 });
 
-ipcMain.handle('set-menu-context', async (_event, context) => {
-  createMenu(context);
+ipcMain.handle('set-menu-context', async () => {
   return true;
 });
 

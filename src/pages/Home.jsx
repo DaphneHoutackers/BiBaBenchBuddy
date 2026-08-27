@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, Suspense, lazy, Component } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense, lazy, Component } from 'react';
 import {
   ArrowLeft, BookOpen,
   Settings, PanelLeft, ChevronDown, Clock, Trash2, Home as HomeIcon,
-  Edit3, Palette, NotebookPen, CalendarDays, Grid3X3
+  Edit3, Palette, NotebookPen, CalendarDays, Grid3X3,
+  Maximize2, Search, X
 } from 'lucide-react';
 import { BiTransferAlt, BiGame, BiDna} from 'react-icons/bi';
 import { FaSortAmountDown } from "react-icons/fa";
@@ -201,8 +202,20 @@ const TAB_COLORS = [
 function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, iconTextColor, onRestoreHistory, isMacElectron, isMobile, labels, lang }) {
   const [expandedCalc, setExpandedCalc] = useState(null);
   const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [showFullHistoryModal, setShowFullHistoryModal] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState('');
   const { history, deleteHistoryItem, clearHistory } = useHistory();
   const visibleHistory = history.filter(item => !item.data?.hidden && !HIDDEN_HISTORY_TOOL_IDS.has(item.toolId));
+
+  const filteredHistory = useMemo(() => {
+    if (!historyQuery.trim()) return visibleHistory;
+    const q = historyQuery.toLowerCase();
+    return visibleHistory.filter(item => {
+      const title = (item.data?.preview || item.toolName || item.toolId || '').toLowerCase();
+      const tool = (item.toolName || item.toolId || '').toLowerCase();
+      return title.includes(q) || tool.includes(q);
+    });
+  }, [visibleHistory, historyQuery]);
 
   // Auto-expand active tool's tabs
   useEffect(() => {
@@ -325,15 +338,28 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
 
       {/* History section */}
       <div className={`mt-auto border-t p-2 pt-3 flex flex-col ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
-        <button
-          onClick={() => setHistoryExpanded(!historyExpanded)}
-          className="flex items-center justify-between w-full px-1 mb-2 group"
-        >
-          <p className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDark ? 'text-white/40 group-hover:text-white/70' : 'text-slate-400 group-hover:text-slate-600'}`}>
-            <Clock className="w-3.5 h-3.5" /> {labels.history}
-          </p>
-          <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${historyExpanded ? 'rotate-180' : ''} ${isDark ? 'text-white/30' : 'text-slate-300'}`} />
-        </button>
+        <div className="flex items-center justify-between w-full px-1 mb-2">
+          <button
+            onClick={() => setHistoryExpanded(!historyExpanded)}
+            className="flex items-center gap-1.5 group flex-1 text-left"
+          >
+            <p className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDark ? 'text-white/40 group-hover:text-white/70' : 'text-slate-400 group-hover:text-slate-600'}`}>
+              <Clock className="w-3.5 h-3.5" /> {labels.history}
+            </p>
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${historyExpanded ? 'rotate-180' : ''} ${isDark ? 'text-white/30' : 'text-slate-300'}`} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowFullHistoryModal(true);
+            }}
+            title={lang === 'nl' ? 'Volledige geschiedenis openen' : 'Open full history'}
+            className={`p-1 rounded-md transition-colors ${isDark ? 'hover:bg-white/10 text-white/40 hover:text-white' : 'hover:bg-slate-200 text-slate-400 hover:text-slate-700'}`}
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
         {historyExpanded && (
           <div className="animate-in slide-in-from-bottom-2 duration-300">
@@ -363,7 +389,7 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
                         <p className={`text-xs font-medium truncate ${isDark ? 'text-white/80' : 'text-slate-700'}`}>
                           {displayTitle}
                         </p>
-                    <p className={`text-[10px] truncate ${isDark ? 'text-white/40' : 'text-slate-400'}`}>
+                        <p className={`text-[10px] truncate ${isDark ? 'text-white/40' : 'text-slate-400'}`}>
                           {displayDate.toLocaleDateString(lang === 'nl' ? 'nl-NL' : 'en-US')} · {displayDate.toLocaleTimeString(lang === 'nl' ? 'nl-NL' : 'en-US', {
                             hour: '2-digit',
                             minute: '2-digit',
@@ -388,6 +414,167 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
           </div>
         )}
       </div>
+
+      {/* Full History Modal */}
+      {showFullHistoryModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => {
+            setShowFullHistoryModal(false);
+            setHistoryQuery('');
+          }}
+        >
+          <div
+            className={`flex flex-col w-full max-w-2xl max-h-[85vh] rounded-2xl shadow-2xl border overflow-hidden animate-in zoom-in-95 duration-200 ${
+              isDark ? 'bg-slate-900 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/10' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <Clock className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">
+                    {lang === 'nl' ? 'Geschiedenis' : 'History'}
+                  </h3>
+                  <p className={`text-xs ${isDark ? 'text-white/40' : 'text-slate-400'}`}>
+                    {visibleHistory.length} {visibleHistory.length === 1 ? (lang === 'nl' ? 'sessie opgeslagen' : 'session saved') : (lang === 'nl' ? 'sessies opgeslagen' : 'sessions saved')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {visibleHistory.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(lang === 'nl' ? 'Weet je zeker dat je alle geschiedenis wilt wissen?' : 'Are you sure you want to clear all history?')) {
+                        clearHistory();
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                      isDark ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                    }`}
+                  >
+                    {labels.clearAll}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setShowFullHistoryModal(false);
+                    setHistoryQuery('');
+                  }}
+                  className={`p-1.5 rounded-lg transition-colors ${
+                    isDark ? 'hover:bg-white/10 text-white/60 hover:text-white' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'
+                  }`}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search filter */}
+            <div className={`p-4 border-b ${isDark ? 'border-white/10 bg-slate-950/40' : 'border-slate-100 bg-slate-50/50'}`}>
+              <div className="relative">
+                <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${isDark ? 'text-white/30' : 'text-slate-400'}`} />
+                <input
+                  type="text"
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                  placeholder={lang === 'nl' ? 'Zoek in geschiedenis...' : 'Search history...'}
+                  className={`w-full pl-10 pr-4 py-2 text-sm rounded-xl border outline-none transition-all ${
+                    isDark
+                      ? 'bg-slate-900 border-white/10 text-white placeholder-white/30 focus:border-emerald-500/50'
+                      : 'bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20'
+                  }`}
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2 max-h-[55vh]">
+              {filteredHistory.length === 0 ? (
+                <div className="py-12 text-center">
+                  <Clock className={`w-10 h-10 mx-auto mb-3 opacity-30 ${isDark ? 'text-white' : 'text-slate-400'}`} />
+                  <p className={`text-sm ${isDark ? 'text-white/40' : 'text-slate-400'}`}>
+                    {historyQuery ? (lang === 'nl' ? 'Geen overeenkomende items gevonden.' : 'No matching items found.') : labels.empty}
+                  </p>
+                </div>
+              ) : (
+                filteredHistory.map((item) => {
+                  const displayTitle = item.data?.preview || item.toolName || item.toolId || 'History item';
+                  const displayDate = new Date(item.createdAt || item.timestamp);
+                  const isNote = item.toolId === 'notes';
+
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        onRestoreHistory(item);
+                        setShowFullHistoryModal(false);
+                        setHistoryQuery('');
+                      }}
+                      className={`group flex items-center justify-between p-3.5 rounded-xl cursor-pointer border transition-all duration-150 ${
+                        isDark
+                          ? 'bg-white/[0.02] border-white/5 hover:bg-white/10 hover:border-white/15'
+                          : 'bg-white border-slate-100 hover:bg-slate-50 hover:border-slate-200 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0 flex-1 pr-3">
+                        <div
+                          className={`p-2.5 rounded-xl shrink-0 ${
+                            isNote
+                              ? isDark ? 'bg-pink-500/10 text-pink-400' : 'bg-pink-50 text-pink-600'
+                              : isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600'
+                          }`}
+                        >
+                          {isNote ? <Edit3 className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span
+                              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                                isDark ? 'bg-white/10 text-white/70' : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {item.toolName || item.toolId}
+                            </span>
+                            <span className={`text-xs ${isDark ? 'text-white/40' : 'text-slate-400'}`}>
+                              {displayDate.toLocaleDateString(lang === 'nl' ? 'nl-NL' : 'en-US')} ·{' '}
+                              {displayDate.toLocaleTimeString(lang === 'nl' ? 'nl-NL' : 'en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <p className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-slate-800'}`}>
+                            {displayTitle}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteHistoryItem(item.id);
+                        }}
+                        title={lang === 'nl' ? 'Verwijderen' : 'Delete'}
+                        className={`p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-all ${
+                          isDark ? 'hover:bg-rose-500/20 text-rose-400' : 'hover:bg-rose-50 text-rose-600'
+                        }`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -432,9 +619,6 @@ export default function Home() {
         localStorage.removeItem('bibabenchbuddy_active_tool');
       }
     } catch {}
-    if (active !== 'notes') {
-      window.electronAPI?.setMenuContext?.({ tool: active || 'home', hasNote: false });
-    }
   }, [active]);
 
   useEffect(() => {
