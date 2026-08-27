@@ -2291,8 +2291,6 @@ export default function NotesTool({ settings, historyData }) {
   const [viewMode, setViewMode] = useState('library'); // 'library' | 'library-overview' | 'trash'
   const [overviewLayout, setOverviewLayout] = useStoredState('biba_notes_overview_layout', 'table'); // 'table' | 'grid'
   const [gridFolderId, setGridFolderId] = useState(null); // folder drilled into in grid view
-  const [tagInputOpen, setTagInputOpen] = useState(false);
-  const [newTagText, setNewTagText] = useState('');
   const [tagModal, setTagModal] = useState(null); // { note, tags }
   const [iconPopover, setIconPopover] = useState(null); // { item, anchorRect }
   const [renameDialog, setRenameDialog] = useState(null);
@@ -4023,7 +4021,7 @@ export default function NotesTool({ settings, historyData }) {
   // Table Helpers
   const handleInsertRowAbove = () => {
     if (!tableOverlay?.row || !tableOverlay?.table) return;
-    const { row, table } = tableOverlay;
+    const { row } = tableOverlay;
     commitHistory('table-row-add');
     const colCount = row.children.length;
     const newTr = document.createElement('tr');
@@ -4039,7 +4037,7 @@ export default function NotesTool({ settings, historyData }) {
 
   const handleInsertRowBelow = () => {
     if (!tableOverlay?.row || !tableOverlay?.table) return;
-    const { row, table } = tableOverlay;
+    const { row } = tableOverlay;
     commitHistory('table-row-add');
     const colCount = row.children.length;
     const newTr = document.createElement('tr');
@@ -4322,10 +4320,6 @@ export default function NotesTool({ settings, historyData }) {
     const plainText = textRows.join('\n');
     try { navigator.clipboard?.writeText(plainText); } catch {}
     setCopiedTableData({ type: 'grid', data: gridData });
-  };
-
-  const handleDeleteRange = () => {
-    handleTableSelectionDelete();
   };
 
   const handleDeleteTable = () => {
