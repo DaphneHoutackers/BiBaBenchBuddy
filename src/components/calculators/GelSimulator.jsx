@@ -1,12 +1,13 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Microscope, Plus, Trash2, Copy, Check, Search, X, Grid } from 'lucide-react';
+import { Microscope, Plus, Trash2, Copy, Check, Search, X, Grid, ChevronDown } from 'lucide-react';
 import { FaSortAmountDown } from "react-icons/fa";
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import MacColorPicker from '@/components/shared/MacColorPicker';
 import {
@@ -275,8 +276,10 @@ function NumInput({ value, onChange, ...props }) {
   return <Input ref={ref} type={props.type || "text"} inputMode={props.type === "number" ? undefined : "decimal"} value={value} onChange={handleChange} {...props} />;
 }
 
-function EnzymePickerInline({ selectedEnzymes, onAdd, onRemove }) {
+function EnzymePickerInline({ selectedEnzymes, onAdd, onRemove, placeholder = "Search enzymes..." }) {
   const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef(null);
 
   const selectedDisplayNames = selectedEnzymes.map(getEnzymeDisplayName);
 
@@ -293,53 +296,65 @@ function EnzymePickerInline({ selectedEnzymes, onAdd, onRemove }) {
     return acc;
   }, []);
 
+  useEffect(() => {
+    const handleClick = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5" ref={containerRef}>
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
         <Input
           value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Search enzymes..."
-          className="pl-8 h-8 text-sm border-slate-200 dark:border-slate-700"
+          onChange={e => { setQuery(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          className="pl-8 h-8 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900"
         />
+        {open && query && (
+          <div className="absolute left-0 top-full mt-1 w-full max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 shadow-xl z-50 divide-y divide-slate-100 dark:divide-slate-800">
+            {uniqueFiltered.length === 0 ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">No enzymes found</p>
+            ) : (
+              uniqueFiltered.slice(0, 20).map(enzyme => (
+                <button
+                  type="button"
+                  key={enzyme.name}
+                  onClick={() => {
+                    onAdd(enzyme.name);
+                    setQuery('');
+                    setOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-rose-50 dark:hover:bg-rose-950/30 flex items-center justify-between transition-colors"
+                >
+                  <span className="font-medium text-slate-700 dark:text-slate-200">
+                    {getEnzymeDisplayName(enzyme.name)}
+                  </span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+                    {enzyme.seq}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
-      {query && (
-        <div className="max-h-36 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-900 divide-y divide-slate-50">
-          {uniqueFiltered.length === 0 ? (
-            <p className="text-xs text-slate-400 dark:text-slate-500 text-center py-2">No enzymes found</p>
-          ) : (
-            uniqueFiltered.slice(0, 20).map(enzyme => (
-              <button
-                key={enzyme.name}
-                onClick={() => {
-                  onAdd(enzyme.name);
-                  setQuery('');
-                }}
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-rose-50 flex items-center justify-between"
-              >
-                <span className="font-medium text-slate-700 dark:text-slate-200">
-                  {getEnzymeDisplayName(enzyme.name)}
-                </span>
-                <span className="text-xs text-slate-400 dark:text-slate-500 font-mono">
-                  {enzyme.seq}
-                </span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-
       {selectedEnzymes.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1">
           {selectedEnzymes.map(e => (
             <span
               key={e}
-              className="flex items-center gap-1 text-xs bg-rose-50 border border-rose-200 text-rose-700 dark:text-rose-300 rounded-full px-2 py-0.5 font-medium"
+              className="flex items-center gap-1 text-[11px] bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded-full px-2 py-0.5 font-medium"
             >
               {getEnzymeDisplayName(e)}
-              <button onClick={() => onRemove(e)} className="hover:text-red-700">
+              <button type="button" onClick={() => onRemove(e)} className="hover:text-red-700 dark:hover:text-red-400">
                 <X className="w-3 h-3" />
               </button>
             </span>
@@ -519,20 +534,33 @@ function DnaGelPanel({ activeLanes, selectedLadder, agarose, excisedBands, onBan
       return;
     }
 
-    const dataUrl = canvas.toDataURL('image/png');
-    
     try {
-      const promise = fetch(dataUrl).then(r => r.blob());
-      const item = new window.ClipboardItem({ 'image/png': promise });
-      navigator.clipboard.write([item]).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(err => {
-        console.error("Clipboard write error:", err);
-        alert("Could not copy image directly to clipboard. You can right-click and save the canvas if needed.");
-      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          alert("Could not copy image directly to clipboard.");
+          return;
+        }
+
+        try {
+          const item = new window.ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+          console.warn("Direct blob clipboard write failed, trying promise wrapper:", err);
+          try {
+            const item = new window.ClipboardItem({ 'image/png': Promise.resolve(blob) });
+            await navigator.clipboard.write([item]);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } catch (err2) {
+            console.error("Clipboard write error:", err2);
+            alert("Could not copy image directly to clipboard. You can right-click and save the canvas if needed.");
+          }
+        }
+      }, 'image/png');
     } catch (err) {
-      console.error("ClipboardItem creation error:", err);
+      console.error("Canvas toBlob error:", err);
       alert("Could not copy image directly to clipboard.");
     }
   };
@@ -740,20 +768,33 @@ function WesternBlotTab() {
       return;
     }
 
-    const dataUrl = canvas.toDataURL('image/png');
-    
     try {
-      const promise = fetch(dataUrl).then(r => r.blob());
-      const item = new window.ClipboardItem({ 'image/png': promise });
-      navigator.clipboard.write([item]).then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }).catch(err => {
-        console.error("Clipboard write error:", err);
-        alert("Could not copy image directly to clipboard. You can right-click and save the canvas if needed.");
-      });
+      canvas.toBlob(async (blob) => {
+        if (!blob) {
+          alert("Could not copy image directly to clipboard.");
+          return;
+        }
+
+        try {
+          const item = new window.ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+          console.warn("Direct blob clipboard write failed, trying promise wrapper:", err);
+          try {
+            const item = new window.ClipboardItem({ 'image/png': Promise.resolve(blob) });
+            await navigator.clipboard.write([item]);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } catch (err2) {
+            console.error("Clipboard write error:", err2);
+            alert("Could not copy image directly to clipboard. You can right-click and save the canvas if needed.");
+          }
+        }
+      }, 'image/png');
     } catch (err) {
-      console.error("ClipboardItem creation error:", err);
+      console.error("Canvas toBlob error:", err);
       alert("Could not copy image directly to clipboard.");
     }
   };
@@ -877,17 +918,32 @@ function WesternBlotTab() {
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════
 export default function GelAndWBSimulator({ historyData, isActive, externalTab, onTabChange, tabs }) {
-  const { addHistoryItem, user } = useHistory();
-  const [library, setLibrary] = useState(() => loadUserLib(user?.id));
+  const { addHistoryItem, user, history } = useHistory();
+  const librarySnapshot = useMemo(() => {
+    const snapshotId = user ? `__seq_analyzer_library___${user.id}` : '__seq_analyzer_library__';
+    return history?.find(item => item.id === snapshotId);
+  }, [history, user]);
+
+  const [library, setLibrary] = useState(() => {
+    const localLib = loadUserLib(user?.id);
+    return Array.isArray(localLib) ? localLib : [];
+  });
+
   useEffect(() => {
-    setLibrary(loadUserLib(user?.id));
-  }, [user?.id]);
+    const localLib = loadUserLib(user?.id);
+    const remoteLibrary = Array.isArray(librarySnapshot?.data?.library)
+      ? librarySnapshot.data.library
+      : null;
+    const nextLib = remoteLibrary || localLib || [];
+    setLibrary(nextLib);
+  }, [user?.id, librarySnapshot]);
   const [tab, setTab] = useState(externalTab || 'dna');
   useEffect(() => { if (externalTab) setTab(externalTab); }, [externalTab]);
   const [selectedLadder, setSelectedLadder] = useState('GeneRuler 1kb');
   const [agarose, setAgarose] = useState('1');
   const [voltage, setVoltage] = useState(120);
   const [runtime, setRuntime] = useState(35);
+  const [defaultEnzymes, setDefaultEnzymes] = useState([]);
   
   // Unified DNA lanes state
   const [dnaLanes, setDnaLanes] = useState([
@@ -902,16 +958,29 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
   // Digest calculation results cache
   const [digestCache, setDigestCache] = useState({});
 
+  const applyDefaultEnzymesToAll = () => {
+    if (defaultEnzymes.length === 0) return;
+    setDnaLanes(prev => prev.map(lane => {
+      if (lane.type === 'sequence') {
+        return { ...lane, enzymes: [...defaultEnzymes] };
+      }
+      return lane;
+    }));
+  };
+
+  // Restore from history
   useEffect(() => {
     if (historyData && historyData.toolId === 'gel') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d) {
-        if (d.tab !== undefined) setTab(d.tab === 'manual' || d.tab === 'digest' ? 'dna' : d.tab);
+        if (d.tab) setTab(d.tab);
         if (d.selectedLadder !== undefined) setSelectedLadder(d.selectedLadder);
         if (d.agarose !== undefined) setAgarose(d.agarose);
         if (d.voltage !== undefined) setVoltage(d.voltage);
         if (d.runtime !== undefined) setRuntime(d.runtime);
+        if (d.defaultEnzymes !== undefined) setDefaultEnzymes(d.defaultEnzymes);
         if (d.dnaLanes !== undefined) setDnaLanes(d.dnaLanes);
         else if (d.lanes !== undefined) {
           // Migration from old manual lanes
@@ -964,30 +1033,25 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
     if (changed) setDigestCache(newCache);
   }, [dnaLanes]);
 
-  useEffect(() => {
-    if (isRestoring || !isActive) return;
-
-    const debounce = setTimeout(() => {
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'gel',
-        toolName: 'Gel & WB Simulator',
-        data: {
-          preview: tab === 'dna' ? `DNA Gel (${dnaLanes.length} lanes)` : 'Western Blot',
-          tab,
-          selectedLadder,
-          agarose,
-          voltage,
-          runtime,
-          dnaLanes,
-          excisedBands,
-          laneColors,
-        }
-      });
-    }, 1000);
-
-    return () => clearTimeout(debounce);
-  }, [tab, selectedLadder, agarose, voltage, runtime, dnaLanes, excisedBands, laneColors, isRestoring, addHistoryItem]);
+  const handleSaveToHistory = () => {
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'gel',
+      toolName: 'Gel & WB Simulator',
+      data: {
+        preview: tab === 'dna' ? `DNA Gel (${dnaLanes.length} lanes)` : 'Western Blot',
+        tab,
+        selectedLadder,
+        agarose,
+        voltage,
+        runtime,
+        defaultEnzymes,
+        dnaLanes,
+        excisedBands,
+        laneColors,
+      }
+    });
+  };
 
   const parsedLanes = dnaLanes.map(lane => {
     let bpList = [];
@@ -1001,7 +1065,7 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
 
   const addLane = () => {
     const id = dnaLanes.length > 0 ? Math.max(...dnaLanes.map(l => l.id)) + 1 : 1;
-    setDnaLanes([...dnaLanes, { id, label: `Lane ${id}`, type: 'sequence', manualFragments: '', sequence: '', enzymes: [], circular: true }]);
+    setDnaLanes([...dnaLanes, { id, label: `Lane ${id}`, type: 'sequence', manualFragments: '', sequence: '', enzymes: [...defaultEnzymes], circular: true }]);
   };
 
   const updateLane = (id, fieldOrObj, val) => {
@@ -1016,14 +1080,17 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-sm">
-          <FaSortAmountDown className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-sm">
+            <FaSortAmountDown className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Gel & WB Simulator</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Unified DNA gel and Western Blot analysis</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Gel & WB Simulator</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Unified DNA gel and Western Blot analysis</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
@@ -1046,65 +1113,101 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
               <Card className="border-0 shadow-sm bg-white dark:bg-white/10 backdrop-blur">
                 <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-200">Gel Configuration</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-4">
-                    {/* Left Column: DNA Ladder Select & Agarose Input */}
-                    <div className="space-y-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs text-slate-600 dark:text-slate-200">DNA Ladder</Label>
-                        <Select value={selectedLadder} onValueChange={setSelectedLadder}>
-                          <SelectTrigger className="border-slate-200 dark:border-slate-700 h-8 text-xs max-w-[210px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>{Object.keys(LADDERS).map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs text-slate-600 dark:text-slate-200">Agarose (%)</Label>
-                        <div className="relative flex items-center max-w-[90px]">
-                          <NumInput
-                            value={agarose}
-                            onChange={e => setAgarose(e.target.value)}
-                            className="h-8 text-xs pr-7 border-slate-200 dark:border-slate-700 w-full"
-                          />
-                          <div className="absolute right-1 flex flex-col -space-y-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const val = parseFloat(agarose) || 0;
-                                const newVal = Math.min(5.0, val + 0.5);
-                                setAgarose(String(Number(newVal.toFixed(1))));
-                              }}
-                              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5"
-                            >
-                              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const val = parseFloat(agarose) || 0;
-                                const newVal = Math.max(0.1, val - 0.5);
-                                setAgarose(String(Number(newVal.toFixed(1))));
-                              }}
-                              className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5"
-                            >
-                              <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                              </svg>
-                            </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-4 sm:gap-6 items-start">
+                    {/* Left Column: DNA Ladder + Agarose on top, Enzymes selector + Apply to All below */}
+                    <div className="space-y-2.5 w-full sm:w-[275px] shrink-0">
+                      {/* Top Left: DNA Ladder & Agarose side by side */}
+                      <div className="flex items-end gap-2">
+                        <div className="space-y-1 w-[185px] shrink-0">
+                          <Label className="text-xs text-slate-600 dark:text-slate-200">DNA Ladder</Label>
+                          <Select value={selectedLadder} onValueChange={setSelectedLadder}>
+                            <SelectTrigger className="border-slate-200 dark:border-slate-700 h-8 text-xs w-full px-2.5 truncate"><SelectValue /></SelectTrigger>
+                            <SelectContent>{Object.keys(LADDERS).map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1 w-[82px] shrink-0">
+                          <Label className="text-xs text-slate-600 dark:text-slate-200 whitespace-nowrap">Agarose (%)</Label>
+                          <div className="relative flex items-center w-full">
+                            <NumInput
+                              value={agarose}
+                              onChange={e => setAgarose(e.target.value)}
+                              className="h-8 text-xs pr-6 border-slate-200 dark:border-slate-700 w-full"
+                            />
+                            <div className="absolute right-1 flex flex-col -space-y-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const val = parseFloat(agarose) || 0;
+                                  const newVal = Math.min(5.0, val + 0.5);
+                                  setAgarose(String(Number(newVal.toFixed(1))));
+                                }}
+                                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5"
+                              >
+                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const val = parseFloat(agarose) || 0;
+                                  const newVal = Math.max(0.1, val - 0.5);
+                                  setAgarose(String(Number(newVal.toFixed(1))));
+                                }}
+                                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5"
+                              >
+                                <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3.5}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Left: Default Enzymes with Apply to All */}
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-200">
+                          Default Enzymes
+                        </Label>
+                        <div className="flex items-start gap-1.5">
+                          <div className="flex-1 min-w-0">
+                            <EnzymePickerInline
+                              selectedEnzymes={defaultEnzymes}
+                              onAdd={enz => setDefaultEnzymes(prev => prev.includes(enz) ? prev : [...prev, enz])}
+                              onRemove={enz => setDefaultEnzymes(prev => prev.filter(x => x !== enz))}
+                              placeholder="Search enzymes..."
+                            />
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            type="button"
+                            onClick={applyDefaultEnzymesToAll}
+                            className="h-8 text-[10px] uppercase font-bold dark:text-slate-200 shrink-0 px-2 mt-0 border-slate-200 dark:border-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:text-rose-600"
+                            title="Apply these enzymes to all sequence lanes"
+                          >
+                            Apply to All
+                          </Button>
                         </div>
                       </div>
                     </div>
 
                     {/* Right Column: Voltage & Time Sliders */}
-                    <div className="space-y-3">
+                    <div className="space-y-3 pt-0.5 w-full">
                       <div className="space-y-1">
-                        <Label className="text-[11px] text-slate-700 dark:text-slate-200">Voltage: <span className="font-bold">{voltage}V</span></Label>
-                        <input type="range" min="50" max="200" step="5" value={voltage} onChange={e=>setVoltage(+e.target.value)} className="w-full accent-blue-600 h-1.5" />
+                        <div className="flex justify-between items-center text-xs">
+                          <Label className="text-[11px] text-slate-700 dark:text-slate-200">Voltage</Label>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{voltage}V</span>
+                        </div>
+                        <input type="range" min="50" max="200" step="5" value={voltage} onChange={e=>setVoltage(+e.target.value)} className="w-full accent-blue-600 h-1.5 cursor-pointer" />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[11px] text-slate-700 dark:text-slate-200">Time: <span className="font-bold">{runtime}m</span></Label>
-                        <input type="range" min="10" max="120" step="5" value={runtime} onChange={e=>setRuntime(+e.target.value)} className="w-full accent-blue-600 h-1.5" />
+                        <div className="flex justify-between items-center text-xs">
+                          <Label className="text-[11px] text-slate-700 dark:text-slate-200">Time</Label>
+                          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{runtime}m</span>
+                        </div>
+                        <input type="range" min="10" max="120" step="5" value={runtime} onChange={e=>setRuntime(+e.target.value)} className="w-full accent-blue-600 h-1.5 cursor-pointer" />
                       </div>
                     </div>
                   </div>
@@ -1137,38 +1240,41 @@ export default function GelAndWBSimulator({ historyData, isActive, externalTab, 
                           >
                             Manual
                           </button>
-                          {library && library.filter(item => item.type !== 'folder').length > 0 && (
-                            <div className="relative inline-flex items-center">
-                              <button
-                                type="button"
-                                className="px-2.5 py-1 text-[10px] font-bold uppercase rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-                              >
-                                Library
-                              </button>
-                              <select
-                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                                defaultValue=""
-                                onChange={(e) => {
-                                  const entry = library.find(item => item.id === e.target.value);
-                                  if (entry) {
-                                    const seq = entry.sequence || entry.rawInput || entry.seq || entry.content || '';
-                                    updateLane(lane.id, {
-                                      sequence: seq,
-                                      circular: entry.isCircular !== undefined ? !!entry.isCircular : (entry.topology === 'circular' || true),
-                                      type: 'sequence',
-                                      label: entry.name || lane.label,
-                                    });
-                                  }
-                                  e.target.value = '';
-                                }}
-                              >
-                                <option value="" disabled>Library</option>
-                                {library.filter(item => item.type !== 'folder').map(entry => (
-                                  <option key={entry.id} value={entry.id}>{entry.name}</option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
+                          <div className="relative inline-flex items-center">
+                            <button
+                              type="button"
+                              className="px-2.5 py-1 text-[10px] font-bold uppercase rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1"
+                            >
+                              <span>Library</span>
+                              <ChevronDown className="w-2.5 h-2.5 opacity-60" />
+                            </button>
+                            <select
+                              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                              value=""
+                              onChange={(e) => {
+                                const entry = library.find(item => item.id === e.target.value);
+                                if (entry) {
+                                  const seq = entry.sequence || entry.rawInput || entry.seq || entry.content || '';
+                                  updateLane(lane.id, {
+                                    sequence: seq,
+                                    circular: entry.isCircular !== undefined ? !!entry.isCircular : (entry.topology === 'circular' || true),
+                                    type: 'sequence',
+                                    label: entry.name || lane.label,
+                                  });
+                                }
+                                e.target.value = '';
+                              }}
+                            >
+                              <option value="" disabled>
+                                {library && library.filter(item => item.type !== 'folder').length > 0 ? "Import from Library..." : "Library is empty"}
+                              </option>
+                              {library && library.filter(item => item.type !== 'folder').map(entry => (
+                                <option key={entry.id} value={entry.id}>
+                                  {entry.name || 'Untitled sequence'} {entry.sequence?.length || entry.seq?.length ? `(${entry.sequence?.length || entry.seq?.length} bp)` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                           <Button variant="ghost" size="icon" className="h-6 w-6 ml-0.5 text-slate-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400" onClick={() => setDnaLanes(dnaLanes.filter(l => l.id !== lane.id))} title="Verwijder lane">
                             <X className="w-3.5 h-3.5" />
                           </Button>

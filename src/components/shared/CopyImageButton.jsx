@@ -108,9 +108,18 @@ const CopyImageButton = forwardRef(({ targetRef, label = "Copy Image", ...props 
       navigator.clipboard.write([item]).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-      }).catch(clipboardErr => {
-        console.error("Clipboard API error:", clipboardErr);
-        alert("Could not copy image directly to clipboard. You can right-click and save the canvas if needed.");
+      }).catch(async (clipboardErr) => {
+        console.warn("ClipboardItem with Promise failed, trying direct blob fallback:", clipboardErr);
+        try {
+          const blob = await promise;
+          const directItem = new window.ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([directItem]);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } catch (fallbackErr) {
+          console.error("Clipboard API error:", fallbackErr);
+          alert("Could not copy image directly to clipboard.");
+        }
       }).finally(() => {
         setIsCapturing(false);
       });

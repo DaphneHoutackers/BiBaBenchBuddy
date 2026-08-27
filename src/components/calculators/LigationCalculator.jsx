@@ -11,6 +11,7 @@ import { BsOpencollective } from "react-icons/bs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { copyAsHtmlTable } from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import MacColorPicker from '@/components/shared/MacColorPicker';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
@@ -55,11 +56,18 @@ function NumInput({ value, onChange, ...props }) {
   return <Input ref={ref} type={props.type || "text"} inputMode={props.type === "number" ? undefined : "decimal"} value={value} onChange={handleChange} {...props} />;
 }
 
+const formatCleanDecimal = (num) => {
+  if (num === null || num === undefined || isNaN(Number(num))) return '';
+  const rounded = Math.round(Number(num) * 10) / 10;
+  return rounded.toString();
+};
+
 const formatNumber = (val) => {
-  if (val === undefined || val === null) return '';
+  if (val === undefined || val === null || val === '') return '';
   const num = Number(val);
   if (isNaN(num)) return val;
-  return num.toString();
+  const rounded = Math.round(num * 100) / 100;
+  return rounded.toString();
 };
 
 const LIGASES = {
@@ -205,7 +213,7 @@ function calcLigationMix(vectorConc, vectorLength, inserts, vectorAmount, totalV
 
     return {
       ...ins,
-      insertAmount: insertAmount.toFixed(1),
+      insertAmount: formatCleanDecimal(insertAmount),
       insertVol: insertVol.toFixed(2),
       rawVol: insertVolRaw,
       needsDilution,
@@ -237,7 +245,7 @@ function calcLigationMix(vectorConc, vectorLength, inserts, vectorAmount, totalV
 }
 
 // ─── Single Ligation Tab ───────────────────────────────────────────
-function SingleLigation({ historyData, isActive, sessionId }) {
+function SingleLigation({ historyData, isActive, sessionId, saveRef }) {
   const SAVED_STATE_KEY = 'bibabench_ligation_single_state';
   const defaultState = {
     vectorConc: '', vectorLength: '', vectorAmount: '50',
@@ -297,30 +305,36 @@ function SingleLigation({ historyData, isActive, sessionId }) {
     }
   }, [historyData]);
 
+  const handleSaveToHistory = () => {
+    const stateToSave = {
+      vectorConc, vectorLength, vectorAmount, inserts, totalVolume,
+      ligase, ligaseVol, pegVolInput, autoDilute, minVol
+    };
+    let preview = `Single ligation, ${inserts.length} insert${inserts.length > 1 ? 's' : ''}`;
+    if (vectorAmount) preview += ` (${vectorAmount} ng vector)`;
+
+    addHistoryItem({
+      id: historyData?.id || sessionId,
+      toolId: 'ligation',
+      toolName: 'Ligation',
+      data: { preview, tab: 'single', ...stateToSave }
+    });
+  };
+
+  useEffect(() => {
+    if (saveRef) {
+      saveRef.current = handleSaveToHistory;
+    }
+  });
+
   useEffect(() => {
     if (isRestoring.current) return;
-
     const stateToSave = {
       vectorConc, vectorLength, vectorAmount, inserts, totalVolume,
       ligase, ligaseVol, pegVolInput, autoDilute, minVol
     };
     localStorage.setItem(SAVED_STATE_KEY, JSON.stringify(stateToSave));
-
-    const timeout = setTimeout(() => {
-      if (!isActive) return;
-      const allFilled = vectorConc && vectorLength && inserts.every(i => i.conc && i.length && i.ratio);
-      if (allFilled) {
-        addHistoryItem({
-          id: sessionId,
-          toolId: 'ligation',
-          toolName: 'Ligation',
-          data: { preview: `Single ligation, ${inserts.length} insert${inserts.length > 1 ? 's' : ''}`, tab: 'single', ...stateToSave }
-        });
-      }
-    }, 2000);
-
-    return () => clearTimeout(timeout);
-  }, [vectorConc, vectorLength, vectorAmount, inserts, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol, addHistoryItem]);
+  }, [vectorConc, vectorLength, vectorAmount, inserts, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol]);
 
   const addInsert = () => {
     const id = Math.max(...inserts.map(i => i.id)) + 1;
@@ -362,28 +376,28 @@ function SingleLigation({ historyData, isActive, sessionId }) {
         {/* Row 1: Reaction settings + DNA cards side by side */}
         <div className="flex gap-3 flex-wrap sm:flex-nowrap">
           {/* Reaction Settings */}
-          <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0 self-stretch w-full sm:w-[260px]">
+          <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0 self-stretch w-full sm:w-[220px]">
             <CardHeader className="pb-2 pt-3"><CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200">General Settings</CardTitle></CardHeader>
             <CardContent className="pb-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2">
                   <Label className="text-xs text-slate-700 dark:text-slate-200">Ligase</Label>
                   <Select value={ligase} onValueChange={setLigase}>
-                    <SelectTrigger className="border-slate-200 dark:border-slate-700 h-7 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 h-7 text-xs"><SelectValue /></SelectTrigger>
                     <SelectContent>{Object.keys(LIGASES).map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div>
                   <Label className="text-xs text-slate-700 dark:text-slate-200">Ligase vol (µL)</Label>
-                  <NumInput value={ligaseVol} onChange={e => setLigaseVol(e.target.value)} className="border-slate-200 dark:border-slate-700 h-7 text-xs" />
+                  <NumInput value={ligaseVol} onChange={e => setLigaseVol(e.target.value)} className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 h-7 text-xs" />
                 </div>
                 <div>
                   <Label className="text-xs text-slate-600 dark:text-slate-200">PEG4000 (µL)</Label>
-                  <NumInput value={pegVolInput} onChange={e => setPegVolInput(e.target.value)} className="border-slate-200 dark:border-slate-700 h-7 text-xs" />
+                  <NumInput value={pegVolInput} onChange={e => setPegVolInput(e.target.value)} className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 h-7 text-xs" />
                 </div>
                 <div>
                   <Label className="text-xs text-slate-700 dark:text-slate-200">Total vol (µL)</Label>
-                  <NumInput value={totalVolume} onChange={e => setTotalVolume(e.target.value)} className="border-slate-200 dark:border-slate-700 h-7 text-xs" />
+                  <NumInput value={totalVolume} onChange={e => setTotalVolume(e.target.value)} className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 h-7 text-xs" />
                 </div>
                 <div className="space-y-1">
                 <Label className="text-xs text-slate-700 dark:text-slate-200">Auto-dilute</Label>
@@ -394,7 +408,7 @@ function SingleLigation({ historyData, isActive, sessionId }) {
                   <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 pl-1">
                     <span>If &lt;</span>
                     <NumInput step="0.1" value={minVol} onChange={(e) => setMinVol(e.target.value)}
-                      className="h-5 w-10 text-[10px] border-slate-200 dark:border-slate-700 px-0.5 text-center bg-white dark:bg-slate-900 focus:ring-1 focus:ring-violet-500/20 inline-block animate-none" />
+                      className="h-5 w-10 text-[10px] border-slate-200 dark:border-slate-700 px-0.5 text-center bg-slate-50 dark:bg-slate-800/80 focus:bg-white dark:focus:bg-slate-900 inline-block animate-none" />
                     <span>µL</span>
                   </div>
                   )}
@@ -412,40 +426,42 @@ function SingleLigation({ historyData, isActive, sessionId }) {
               const singleVectorIsMax = isAtMaxAmount(vectorAmount, singleMaxVectorAmount);
 
               return (
-                <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0">
+                <Card className="border border-slate-200 dark:border-slate-700 shadow-sm bg-white dark:bg-white/10 backdrop-blur flex-shrink-0 w-[155px]">
                   <CardHeader className="pb-1.5 pt-3">
                     <CardTitle className="text-xs font-semibold text-slate-700 dark:text-slate-200 uppercase tracking-wide">Vector</CardTitle>
                   </CardHeader>
-                  <CardContent className="pb-3 pt-0 space-y-1.5 min-w-[125px]">
+                  <CardContent className="pb-3 pt-0 space-y-1.5">
                     <div>
-                      <Label className="text-xs text-slate-700 dark:text-slate-200">Conc. (ng/µL)</Label>
-                      <NumInput placeholder="50" value={vectorConc} onChange={e => setVectorConc(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                      <Label className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">Conc. (ng/µL)</Label>
+                      <NumInput placeholder="50" value={vectorConc} onChange={e => setVectorConc(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2" />
                     </div>
                     <div>
-                      <Label className="text-xs text-slate-700 dark:text-slate-200">Length (bp)</Label>
-                      <NumInput placeholder="5000" value={vectorLength} onChange={e => setVectorLength(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                      <Label className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">Length (bp)</Label>
+                      <NumInput placeholder="5000" value={vectorLength} onChange={e => setVectorLength(e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2" />
                     </div>
                     <div>
-                      <Label className="text-xs text-slate-700 dark:text-slate-200">Amount (ng)</Label>
+                      <Label className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">Amount (ng)</Label>
                       <div className="relative flex items-center">
                         <NumInput 
                           placeholder="50" 
                           value={vectorAmount} 
                           onChange={e => setVectorAmount(e.target.value)} 
-                          className="h-7 text-xs pr-11 border-slate-200 dark:border-slate-700 w-full" 
+                          className="h-7 text-xs pl-2 pr-12 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 w-full" 
                         />
-                        <button
+                        <Button
                           type="button"
+                          variant="outline"
+                          size="sm"
                           onClick={() => {
                             if (singleMaxVectorAmount !== null && singleMaxVectorAmount > 0) {
-                              setVectorAmount(singleMaxVectorAmount.toFixed(1));
+                              setVectorAmount(formatCleanDecimal(singleMaxVectorAmount));
                             }
                           }}
-                          className={`absolute right-1 text-[9px] h-4.5 px-1 font-bold shadow-sm border rounded ${singleVectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 dark:bg-emerald-500' : 'text-violet-600 border-violet-200 dark:border-violet-800 hover:bg-violet-50 bg-white/95 dark:bg-slate-900/95'}`}
+                          className={`absolute right-1 text-[9px] h-5 px-1.5 font-bold shadow-xs border rounded animate-none ${singleVectorIsMax ? 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600' : 'text-slate-600 border-slate-200 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 bg-white/95 dark:bg-slate-900/95'}`}
                           title="Auto-calculate maximum vector DNA"
                         >
-                          {singleVectorIsMax ? <Check className="w-2.5 h-2.5" /> : 'Max'}
-                        </button>
+                          {singleVectorIsMax ? <Check className="w-2.5 h-2.5 text-slate-700 dark:text-slate-200" strokeWidth={3} /> : 'Max'}
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
@@ -464,30 +480,34 @@ function SingleLigation({ historyData, isActive, sessionId }) {
               <CardContent className="pb-3 pt-0">
                 <div className="flex gap-2">
                   {inserts.map(ins => (
-                    <div key={ins.id} className="space-y-1.5 min-w-[110px] border-r border-slate-100 dark:border-slate-800 last:border-r-0 pr-2 last:pr-0">
-                      <div className="flex items-center justify-between">
-                        <Input value={ins.name} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, name: e.target.value } : i))}
-                          className="h-5 text-xs border-0 bg-transparent p-0 font-semibold text-slate-700 dark:text-slate-200 w-full" placeholder="Insert" />
+                    <div key={ins.id} className="space-y-1.5 w-[145px] border-r border-slate-100 dark:border-slate-800 last:border-r-0 pr-2 last:pr-0">
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <Input 
+                          value={ins.name} 
+                          onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, name: e.target.value } : i))}
+                          className="h-6 text-xs border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md font-bold text-slate-800 dark:text-slate-100 tracking-wide w-full focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                          placeholder="Insert" 
+                        />
                         {inserts.length > 1 && (
-                          <button onClick={() => setInserts(inserts.filter(i => i.id !== ins.id))} className="text-slate-300 hover:text-red-500 dark:text-red-400 ml-1 flex-shrink-0"><Trash2 className="w-3 h-3" /></button>
+                          <button type="button" onClick={() => setInserts(inserts.filter(i => i.id !== ins.id))} className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 ml-0.5 flex-shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
                         )}
                       </div>
                       <div>
-                        <Label className="text-xs text-slate-700 dark:text-slate-200">Conc. (ng/µL)</Label>
-                        <NumInput placeholder="30" value={ins.conc} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, conc: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                        <Label className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">Conc. (ng/µL)</Label>
+                        <NumInput placeholder="30" value={ins.conc} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, conc: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2" />
                       </div>
                       <div>
-                        <Label className="text-xs text-slate-700 dark:text-slate-200">Length (bp)</Label>
-                        <NumInput placeholder="1200" value={ins.length} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, length: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                        <Label className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">Length (bp)</Label>
+                        <NumInput placeholder="1200" value={ins.length} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, length: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2" />
                       </div>
                       <div>
                         <Label className="text-xs text-slate-700 dark:text-slate-200 flex items-center gap-1">
-                          Ratio (ins:vec)
+                          Ratio
                           <TooltipProvider><Tooltip><TooltipTrigger><Info className="w-3 h-3 text-slate-400 dark:text-slate-500" /></TooltipTrigger>
                             <TooltipContent><p className="text-xs">Molar excess of insert vs vector. E.g. 3 = 3:1</p></TooltipContent>
                           </Tooltip></TooltipProvider>
                         </Label>
-                        <NumInput placeholder="3" value={ins.ratio} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, ratio: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700" />
+                        <NumInput placeholder="3" value={ins.ratio} onChange={e => setInserts(inserts.map(i => i.id === ins.id ? { ...i, ratio: e.target.value } : i))} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2" />
                       </div>
                     </div>
                   ))}
@@ -637,7 +657,7 @@ function defaultLigation(id) {
   };
 }
 
-function BatchLigation({ historyData, isActive, sessionId }) {
+function BatchLigation({ historyData, isActive, sessionId, saveRef }) {
   const tableRef = useRef(null);
   const SAVED_STATE_KEY = 'bibabench_ligation_multi_state';
 
@@ -686,26 +706,29 @@ function BatchLigation({ historyData, isActive, sessionId }) {
     }
   }, [historyData]);
 
+  const handleSaveToHistory = () => {
+    const stateToSave = { ligations, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol };
+    const preview = `Batch Ligation (${ligations.length} mixes)`;
+
+    addHistoryItem({
+      id: historyData?.id || sessionId,
+      toolId: 'ligation',
+      toolName: 'Ligation',
+      data: { preview, tab: 'batch', ...stateToSave }
+    });
+  };
+
+  useEffect(() => {
+    if (saveRef) {
+      saveRef.current = handleSaveToHistory;
+    }
+  });
+
   useEffect(() => {
     if (isRestoring.current) return;
-
     const stateToSave = { ligations, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol };
     localStorage.setItem(SAVED_STATE_KEY, JSON.stringify(stateToSave));
-
-    const timeout = setTimeout(() => {
-      if (!isActive) return;
-      const anyFilled = ligations.some(lig => lig.vectorConc && lig.vectorLength && lig.inserts.every(i => i.conc && i.length && i.ratio));
-      if (anyFilled) {
-        addHistoryItem({
-          id: sessionId,
-          toolId: 'ligation',
-          toolName: 'Ligation',
-          data: { tab: 'batch', ...stateToSave }
-        });
-      }
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, [ligations, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol, addHistoryItem]);
+  }, [ligations, totalVolume, ligase, ligaseVol, pegVolInput, autoDilute, minVol]);
 
   const pegVol = calcPegVol(pegVolInput);
   const tableMinWidth = 140 + ligations.length * 240;
@@ -867,23 +890,33 @@ function BatchLigation({ historyData, isActive, sessionId }) {
             const color = getLigationColor(lig, ligIdx);
             return (
               <Card key={lig.id} className="w-fit flex-shrink-0 self-stretch border-0 shadow-sm bg-white dark:bg-slate-900" style={{ borderLeft: `4px solid ${color.border}` }}>
-                <CardHeader className="pb-1.5 pt-2.5">
+                <CardHeader className="pb-2 pt-2.5 px-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-t-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
                         <MacColorPicker
                           value={color.border && color.border.startsWith('#') ? color.border : '#8b5cf6'}
                           onChange={(nextColor) => updateLigation(lig.id, 'color', generateColorTheme(nextColor))}
-                          buttonClassName="flex h-3.5 w-3.5 items-center justify-center rounded-full"
-                          swatchClassName="h-2.5 w-2.5 rounded-full"
+                          buttonClassName="flex h-5 w-5 items-center justify-center rounded-full"
+                          swatchClassName="h-4 w-4 rounded-full shadow-xs"
                         />
-                        <Input value={lig.label} onChange={e => updateLigation(lig.id, 'label', e.target.value)}
-                          className="h-6 text-xs font-bold border-0 bg-transparent p-0 w-28 focus:ring-0 focus:border-b focus:border-slate-300 dark:focus:border-slate-700" style={{ color: color.text }} />
+                        <Input 
+                          value={lig.label} 
+                          onChange={e => updateLigation(lig.id, 'label', e.target.value)}
+                          className="h-6.5 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-0.5 rounded-md w-28 focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                          style={{ color: color.text }} 
+                        />
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
                       {ligations.length > 1 && (
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-slate-400 hover:text-red-500 dark:hover:text-red-400 animate-none" onClick={() => removeLigation(lig.id)}>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-7 w-7 text-slate-400 hover:text-red-500 dark:hover:text-red-400 animate-none" 
+                          onClick={() => removeLigation(lig.id)}
+                          title="Remove Ligation Mix"
+                        >
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       )}
@@ -900,26 +933,29 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pb-2.5 pt-0">
+                <CardContent className="p-3 pt-2.5">
                   <div className="flex gap-2 overflow-x-auto pb-1.5">
                     {/* Vector */}
-                    <div className="w-[130px] flex-shrink-0 border-r border-slate-150 dark:border-slate-800 pr-2">
-                      <Input 
-                        value={lig.vectorName || 'Vector'} 
-                        onChange={e => updateLigation(lig.id, 'vectorName', e.target.value)}
-                        className="h-5 text-xs border-0 bg-transparent p-0 font-bold text-slate-700 dark:text-slate-200 tracking-wide w-full focus:ring-0 focus:border-b focus:border-slate-200 mb-1" 
-                      />
+                    <div className="w-[145px] flex-shrink-0 border-r border-slate-150 dark:border-slate-800 pr-2">
+                      <div className="mb-1.5">
+                        <Input 
+                          value={lig.vectorName || 'Vector'} 
+                          onChange={e => updateLigation(lig.id, 'vectorName', e.target.value)}
+                          className="h-6 text-xs border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md font-bold text-slate-800 dark:text-slate-100 tracking-wide w-full focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                          placeholder="Vector"
+                        />
+                      </div>
                       <div className="space-y-1">
                         <div>
-                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Conc. (ng/µL)</Label>
-                          <NumInput value={lig.vectorConc} onChange={e => updateLigation(lig.id, 'vectorConc', e.target.value)} placeholder="50" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap">Conc. (ng/µL)</Label>
+                          <NumInput value={lig.vectorConc} onChange={e => updateLigation(lig.id, 'vectorConc', e.target.value)} placeholder="50" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none" />
                         </div>
                         <div>
-                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Length (bp)</Label>
-                          <NumInput value={lig.vectorLength} onChange={e => updateLigation(lig.id, 'vectorLength', e.target.value)} placeholder="5000" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap">Length (bp)</Label>
+                          <NumInput value={lig.vectorLength} onChange={e => updateLigation(lig.id, 'vectorLength', e.target.value)} placeholder="5000" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none" />
                         </div>
                         <div>
-                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Amount (ng)</Label>
+                          <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap">Amount (ng)</Label>
                           {(() => {
                             const cardMaxVectorAmount = getOptimalLigationVectorAmount(lig.vectorConc, lig.vectorLength, lig.inserts, totalVolume, ligase, ligaseVol, pegVolInput);
                             const cardVectorIsMax = isAtMaxAmount(lig.vectorAmount, cardMaxVectorAmount);
@@ -930,20 +966,22 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                                   value={lig.vectorAmount} 
                                   onChange={e => updateLigation(lig.id, 'vectorAmount', e.target.value)} 
                                   placeholder="50" 
-                                  className="h-6.5 text-xs pr-11 border-slate-200 dark:border-slate-700 px-1.5 animate-none w-full" 
+                                  className="h-6.5 text-xs pl-2 pr-12 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none w-full" 
                                 />
-                                <button
+                                <Button
                                   type="button"
+                                  variant="outline"
+                                  size="sm"
                                   onClick={() => {
                                     if (cardMaxVectorAmount !== null && cardMaxVectorAmount > 0) {
-                                      updateLigation(lig.id, 'vectorAmount', cardMaxVectorAmount.toFixed(1));
+                                      updateLigation(lig.id, 'vectorAmount', formatCleanDecimal(cardMaxVectorAmount));
                                     }
                                   }}
-                                  className={`absolute right-1 text-[9px] h-4.5 px-1 font-bold shadow-sm border rounded ${cardVectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 dark:bg-emerald-500' : 'text-violet-600 border-violet-200 dark:border-violet-800 hover:bg-violet-50 bg-white/95 dark:bg-slate-900/95'}`}
+                                  className={`absolute right-1 text-[9px] h-5 px-1.5 font-bold shadow-xs border rounded animate-none ${cardVectorIsMax ? 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600' : 'text-slate-600 border-slate-200 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 bg-white/95 dark:bg-slate-900/95'}`}
                                   title="Auto-calculate maximum vector DNA"
                                 >
-                                  {cardVectorIsMax ? <Check className="w-2.5 h-2.5" /> : 'Max'}
-                                </button>
+                                  {cardVectorIsMax ? <Check className="w-2.5 h-2.5 text-slate-700 dark:text-slate-200" strokeWidth={3} /> : 'Max'}
+                                </Button>
                               </div>
                             );
                           })()}
@@ -952,31 +990,36 @@ function BatchLigation({ historyData, isActive, sessionId }) {
                     </div>
                     {/* Inserts */}
                     {lig.inserts.map(ins => (
-                      <div key={ins.id} className="w-[130px] flex-shrink-0 border-r border-slate-100 dark:border-slate-800 last:border-r-0 pr-2 last:pr-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <Input value={ins.name} onChange={e => updateInsert(lig.id, ins.id, 'name', e.target.value)}
-                            className="h-5 text-xs border-0 bg-transparent p-0 font-bold text-slate-700 dark:text-slate-200 tracking-wide w-full focus:ring-0 focus:border-b focus:border-slate-200" />
+                      <div key={ins.id} className="w-[140px] flex-shrink-0 border-r border-slate-100 dark:border-slate-800 last:border-r-0 pr-2 last:pr-0">
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                          <Input 
+                            value={ins.name} 
+                            onChange={e => updateInsert(lig.id, ins.id, 'name', e.target.value)}
+                            className="h-6 text-xs border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-700/60 px-1.5 py-0.5 rounded-md font-bold text-slate-800 dark:text-slate-100 tracking-wide w-full focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                            placeholder={`Insert ${ins.id}`}
+                          />
                           {lig.inserts.length > 1 && (
                             <button 
+                              type="button"
                               onClick={() => removeInsert(lig.id, ins.id)} 
-                              className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 ml-1 flex-shrink-0 animate-none" 
+                              className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 ml-1 flex-shrink-0 animate-none p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800" 
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
                         <div className="space-y-1">
                           <div>
-                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Conc. (ng/µL)</Label>
-                            <NumInput value={ins.conc} onChange={e => updateInsert(lig.id, ins.id, 'conc', e.target.value)} placeholder="30" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap">Conc. (ng/µL)</Label>
+                            <NumInput value={ins.conc} onChange={e => updateInsert(lig.id, ins.id, 'conc', e.target.value)} placeholder="30" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none" />
                           </div>
                           <div>
-                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Length (bp)</Label>
-                            <NumInput value={ins.length} onChange={e => updateInsert(lig.id, ins.id, 'length', e.target.value)} placeholder="1200" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                            <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold whitespace-nowrap">Length (bp)</Label>
+                            <NumInput value={ins.length} onChange={e => updateInsert(lig.id, ins.id, 'length', e.target.value)} placeholder="1200" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none" />
                           </div>
                           <div>
                             <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Ratio</Label>
-                            <NumInput value={ins.ratio} onChange={e => updateInsert(lig.id, ins.id, 'ratio', e.target.value)} placeholder="3" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none" />
+                            <NumInput value={ins.ratio} onChange={e => updateInsert(lig.id, ins.id, 'ratio', e.target.value)} placeholder="3" className="h-6.5 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 animate-none" />
                           </div>
                         </div>
                       </div>
@@ -1226,6 +1269,16 @@ function BatchLigation({ historyData, isActive, sessionId }) {
 export default function LigationCalculator({ historyData, isActive, externalTab, onTabChange, tabs }) {
   const sessionId = useRef(makeId()).current;
   const [tab, setTab] = useState(externalTab || 'single');
+  const singleSaveRef = useRef(null);
+  const batchSaveRef = useRef(null);
+
+  const handleSaveToHistory = () => {
+    if (tab === 'single' && singleSaveRef.current) {
+      singleSaveRef.current();
+    } else if (tab === 'batch' && batchSaveRef.current) {
+      batchSaveRef.current();
+    }
+  };
 
   useEffect(() => {
     if (externalTab) setTab(externalTab);
@@ -1238,14 +1291,17 @@ export default function LigationCalculator({ historyData, isActive, externalTab,
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-pink-500 text-white shadow-sm">
-            <BsOpencollective className="w-6 h-6" />
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-500 to-pink-500 text-white shadow-sm">
+              <BsOpencollective className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Ligation</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Single or batch ligation mixes with molar ratio calculations</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Ligation</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Single or batch ligation mixes with molar ratio calculations</p>
-          </div>
+          <SaveHistoryButton onSave={handleSaveToHistory} />
         </div>
 
         <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
@@ -1258,8 +1314,8 @@ export default function LigationCalculator({ historyData, isActive, externalTab,
           </TabsList>
 
           {tabs}
-          <TabsContent value="single" className="mt-4"><SingleLigation historyData={tab === 'single' ? historyData : null} isActive={isActive} sessionId={sessionId} /></TabsContent>
-          <TabsContent value="batch" className="mt-4"><BatchLigation historyData={tab === 'batch' ? historyData : null} isActive={isActive} sessionId={sessionId} /></TabsContent>
+          <TabsContent value="single" className="mt-4"><SingleLigation historyData={tab === 'single' ? historyData : null} isActive={isActive} sessionId={sessionId} saveRef={singleSaveRef} /></TabsContent>
+          <TabsContent value="batch" className="mt-4"><BatchLigation historyData={tab === 'batch' ? historyData : null} isActive={isActive} sessionId={sessionId} saveRef={batchSaveRef} /></TabsContent>
         </Tabs>
       </div>
     </TooltipProvider>

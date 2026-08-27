@@ -14,6 +14,7 @@ import OEPCRCalculator from './OEPCRCalculator';
 import PCRProductGenerator from './PCRProductGenerator';
 import CopyTableButton from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 import { getDilutionSuggestion, generateDilutionWarning } from '@/utils/dilutionHelper';
@@ -341,6 +342,7 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
   useEffect(() => {
     if (historyData && historyData.toolId === 'pcr') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d.tab !== undefined) {
         setTab(d.tab);
@@ -429,9 +431,58 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
         setTaPrimerConc(d.taPrimerConc);
         localStorage.setItem('bbb_pcr_ta_conc', d.taPrimerConc);
       }
+
+      setTimeout(() => setIsRestoring(false), 50);
     }
-    setTimeout(() => setIsRestoring(false), 50);
   }, [historyData]);
+
+  const handleSaveToHistory = () => {
+    let preview = '';
+    if (tab === 'mix') {
+      preview = `PCR mix, ${samples.length} sample${samples.length > 1 ? 's' : ''}`;
+    } else if (tab === 'program') {
+      const lengths = samples.map(s => parseFloat(s.productLength) || 0);
+      const longest = Math.max(...lengths, 0);
+      preview = `PCR program, max ${longest} bp, ${polymerase}`;
+    } else if (tab === 'ta') {
+      preview = taFwdPrimer
+        ? `Ta calculator, Fwd primer ${taFwdPrimer.slice(0, 8)}...`
+        : 'Ta calculator';
+    } else {
+      preview = `PCR (${tab})`;
+    }
+
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'pcr',
+      toolName: 'PCR Calculator',
+      data: {
+        preview,
+        tab,
+        polymerase,
+        totalVolume,
+        primerConc,
+        useBetaine,
+        betaineVol,
+        samples,
+        primersIdentical,
+        mastermixEnabled,
+        reactionsInput,
+        templateType,
+        annealTemp,
+        cycleCount,
+        initDenatCustom,
+        finalExtCustom,
+        annealTimeCustom,
+        customExtensionTime,
+        taFwdPrimer,
+        taRevPrimer,
+        taTemplate,
+        taPolymerase,
+        taPrimerConc,
+      }
+    });
+  };
 
   // Auto-manage Mastermix toggle & reactions input
   const prevSamplesLength = useRef(samples.length);
@@ -449,85 +500,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
       prevSamplesLength.current = currentN;
     }
   }, [samples.length, isRestoring]);
-
-  // Save to history
-  useEffect(() => {
-    if (isRestoring || tab === 'oepcr' || tab === 'product' || !isActive) return;
-
-    const debounce = setTimeout(() => {
-      let preview = 'PCR calculation';
-
-      if (tab === 'mix') {
-        preview = `PCR mix, ${samples.length} sample${samples.length > 1 ? 's' : ''}`;
-      } else if (tab === 'program') {
-        const lengths = samples.map(s => parseFloat(s.productLength) || 0);
-        const longest = Math.max(...lengths, 0);
-        preview = `PCR program, max ${longest} bp, ${polymerase}`;
-      } else if (tab === 'ta') {
-        preview = taFwdPrimer
-          ? `Ta calculator, Fwd primer ${taFwdPrimer.slice(0, 8)}...`
-          : 'Ta calculator';
-      }
-
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'pcr',
-        toolName: 'PCR Calculator',
-        data: {
-          preview,
-          tab,
-          polymerase,
-          totalVolume,
-          primerConc,
-          useBetaine,
-          betaineVol,
-          samples,
-          primersIdentical,
-          mastermixEnabled,
-          reactionsInput,
-          templateType,
-          annealTemp,
-          cycleCount,
-          initDenatCustom,
-          finalExtCustom,
-          annealTimeCustom,
-          customExtensionTime,
-          taFwdPrimer,
-          taRevPrimer,
-          taTemplate,
-          taPolymerase,
-          taPrimerConc,
-        }
-      });
-    }, 1000);
-
-    return () => clearTimeout(debounce);
-  }, [
-    tab,
-    polymerase,
-    totalVolume,
-    primerConc,
-    useBetaine,
-    betaineVol,
-    samples,
-    primersIdentical,
-    mastermixEnabled,
-    reactionsInput,
-    templateType,
-    annealTemp,
-    cycleCount,
-    initDenatCustom,
-    finalExtCustom,
-    annealTimeCustom,
-    customExtensionTime,
-    taFwdPrimer,
-    taRevPrimer,
-    taTemplate,
-    taPolymerase,
-    taPrimerConc,
-    isRestoring,
-    addHistoryItem
-  ]);
 
   const poly = POLYMERASES[polymerase];
   const vol = parseFloat(totalVolume) || 50;
@@ -665,14 +637,17 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
   }, [taFwdPrimer, taRevPrimer, taTemplate, taPolymerase, taPrimerConc]);
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-pink-500 to-orange-500 text-white shadow-sm">
-          <BiTransferAlt className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-pink-500 to-orange-500 text-white shadow-sm">
+            <BiTransferAlt className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">PCR Calculator</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Mix calculator with mastermix support & Ta calculator</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">PCR Calculator</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Mix calculator with mastermix support & Ta calculator</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>

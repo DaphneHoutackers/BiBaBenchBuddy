@@ -27,7 +27,10 @@ export function copyAsHtmlTable(rows) {
       'text/html': blob,
       'text/plain': textBlob,
     });
-    navigator.clipboard.write([item]);
+    navigator.clipboard.write([item]).catch((err) => {
+      console.warn("ClipboardItem write failed, falling back to writeText:", err);
+      navigator.clipboard.writeText(text);
+    });
   } else {
     // Fallback: plain text tab-separated
     navigator.clipboard.writeText(text);

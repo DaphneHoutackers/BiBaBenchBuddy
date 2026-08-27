@@ -123,8 +123,8 @@ const createWindow = async () => {
   });
 
   const csp = isDev
-    ? "default-src 'self' 'unsafe-inline' data: blob:; connect-src 'self' ws://localhost:* http://localhost:* https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;"
-    : "default-src 'self' data: blob:; connect-src 'self' https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;";
+    ? "default-src 'self' 'unsafe-inline' data: blob:; connect-src 'self' ws://localhost:* http://localhost:* data: blob: https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;"
+    : "default-src 'self' data: blob:; connect-src 'self' data: blob: https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;";
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({

@@ -296,30 +296,6 @@ export default function OEPCRCalculator({ historyData, isActive }) {
     setFragments(fragments.map(f => f.id === id ? { ...f, [field]: value } : f));
   };
 
-  // Save to history
-  useEffect(() => {
-    if (isRestoring) return;
-    const hasData = fragments.some(f => f.length || f.concentration);
-    if (!hasData || !isActive) return;
-    const debounce = setTimeout(() => {
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'oepcr',
-        toolName: 'OE-PCR Calculator',
-        data: {
-          fragments, refNg, totalVolume, primerConc, betaineVol, polymerase, templateType, initDenatCustom,
-          finalExtCustom, annealTimeCustom, annealTemp, run1Cycles, run2Cycles,
-          customExtensionTime
-        }
-      });
-    }, 1000);
-    return () => clearTimeout(debounce);
-  }, [
-    fragments, refNg, totalVolume, primerConc, betaineVol, polymerase, templateType, initDenatCustom,
-    finalExtCustom, annealTimeCustom, annealTemp, run1Cycles, run2Cycles,
-    customExtensionTime, addHistoryItem
-  ]);
-
   // Main calculation
   useEffect(() => {
     const validFragments = fragments.filter(f => f.length && f.concentration && parseFloat(f.length) > 0 && parseFloat(f.concentration) > 0);

@@ -1614,6 +1614,7 @@ export default function PlasmidAnalyzer({ historyData, isActive }) {
   useEffect(() => {
     if (historyData && historyData.toolId === 'plasmid') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d) {
         if (d.phase !== undefined) setPhase(d.phase);

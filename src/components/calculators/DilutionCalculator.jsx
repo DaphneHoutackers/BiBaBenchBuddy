@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Droplets, FlaskConical, Calculator, AlertCircle, Plus, Layers } from 'lucide-react';
 import { SlCalculator } from "react-icons/sl";
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 
@@ -123,9 +124,10 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
   useEffect(() => {
     if (historyData && historyData.toolId === 'dilution') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d) {
-        if (d.mode) setMode(d.mode);
+        if (d.mode !== undefined) setMode(d.mode);
         if (d.sdStartConc !== undefined) setSdStartConc(d.sdStartConc);
         if (d.sdMode !== undefined) setSdMode(d.sdMode);
         if (d.sdFactor !== undefined) setSdFactor(d.sdFactor);
@@ -151,83 +153,49 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
     }
   }, [historyData]);
 
-  useEffect(() => {
-    if (isRestoring || !isActive) return;
+  const handleSaveToHistory = () => {
+    let preview = 'Dilution';
 
-    const debounce = setTimeout(() => {
-      let preview = 'Dilution';
+    if (mode === 'c1v1' && c1v1Result && c1v1Result.value) {
+      preview = `C1V1: ${labelMap[c1v1Result.solveFor]} = ${c1v1Result.value.toFixed(1)} ${c1v1Result.unit}`;
+    } else if (mode === 'sample' && sdResult && !sdResult.error) {
+      preview = `Sample: ${sdStartConc} → ${sdResult.targetConc?.toFixed(1) || '?'} ng/µL`;
+    } else if (mode === 'addto' && atvResult) {
+      preview = `Add to Vol: ${atvVolume} µL + ${atvResult.addVol?.toFixed(1)} µL`;
+    } else if (mode === 'serial' && serialResult) {
+      preview = `Serial: /${dilutionFactor}× (${numDilutions} wells)`;
+    }
 
-      if (mode === 'c1v1' && c1v1Result && c1v1Result.value) {
-        preview = `C1V1: ${labelMap[c1v1Result.solveFor]} = ${c1v1Result.value.toFixed(1)} ${c1v1Result.unit}`;
-      } else if (mode === 'sample' && sdResult && !sdResult.error) {
-        preview = `Sample: ${sdStartConc} → ${sdResult.targetConc?.toFixed(1) || '?'} ng/µL`;
-      } else if (mode === 'addto' && atvResult) {
-        preview = `Add to Vol: ${atvVolume} µL + ${atvResult.addVol?.toFixed(1)} µL`;
-      } else if (mode === 'serial' && serialResult) {
-        preview = `Serial: /${dilutionFactor}× (${numDilutions} wells)`;
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'dilution',
+      toolName: 'Dilution Calculator',
+      data: {
+        preview,
+        mode,
+        sdStartConc,
+        sdMode,
+        sdFactor,
+        sdFinalConc,
+        sdSampleVol,
+        atvVolume,
+        atvFactor,
+        c1,
+        v1,
+        c2,
+        v2,
+        c1Unit,
+        v1Unit,
+        c2Unit,
+        v2Unit,
+        mw,
+        serialStart,
+        dilutionFactor,
+        numDilutions,
+        volumePerWell,
       }
-
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'dilution',
-        toolName: 'Dilution Calculator',
-        data: {
-          preview,
-          mode,
-          sdStartConc,
-          sdMode,
-          sdFactor,
-          sdFinalConc,
-          sdSampleVol,
-          atvVolume,
-          atvFactor,
-          c1,
-          v1,
-          c2,
-          v2,
-          c1Unit,
-          v1Unit,
-          c2Unit,
-          v2Unit,
-          mw,
-          serialStart,
-          dilutionFactor,
-          numDilutions,
-          volumePerWell,
-        }
-      });
-    }, 1000);
-
-    return () => clearTimeout(debounce);
-  }, [
-    mode,
-    sdStartConc,
-    sdMode,
-    sdFactor,
-    sdFinalConc,
-    sdSampleVol,
-    atvVolume,
-    atvFactor,
-    c1,
-    v1,
-    c2,
-    v2,
-    c1Unit,
-    v1Unit,
-    c2Unit,
-    v2Unit,
-    mw,
-    serialStart,
-    dilutionFactor,
-    numDilutions,
-    volumePerWell,
-    isRestoring,
-    addHistoryItem,
-    c1v1Result,
-    sdResult,
-    atvResult,
-    serialResult
-  ]);
+    });
+  };
 
   // C1V1 calculation: always auto-detects missing field
   useEffect(() => {
@@ -394,14 +362,17 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-sm">
-          <SlCalculator className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-pink-500 text-white shadow-sm">
+            <SlCalculator className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Dilution Calculator</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">C₁V₁=C₂V₂ and serial dilutions</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Dilution Calculator</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">C₁V₁=C₂V₂ and serial dilutions</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={mode} onValueChange={v => { setMode(v); onTabChange?.(v); }}>

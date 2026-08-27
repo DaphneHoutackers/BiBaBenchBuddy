@@ -209,8 +209,8 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
     if (active && TOOL_TABS[active]) setExpandedCalc(active);
   }, [active]);
 
-  const btnBase = (isActive) => `w-full flex items-center gap-2 px-2.5 py-1 min-h-[32px] rounded-lg text-sm font-medium mb-0.5 transition-all ${isActive
-    ? (isDark ? 'bg-white/15 text-white' : 'bg-teal-50 text-teal-700 border border-teal-200')
+  const btnBase = (isActive) => `w-full flex items-center gap-2 px-2.5 py-1.5 min-h-[32px] rounded-lg text-sm font-medium mb-0.5 transition-all ${isActive
+    ? (isDark ? 'bg-white/15 text-white font-semibold shadow-sm' : 'bg-slate-100/90 text-slate-900 font-semibold border border-slate-200/80 shadow-xs')
     : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')
     }`;
 
@@ -269,9 +269,9 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
                 <div className="ml-5 mb-0.5 space-y-0.5">
                   {TOOL_TABS[c.id].map(tab => (
                     <button key={tab.id} onClick={() => { onSelect(c.id); onSelectTab(c.id, tab.id); }}
-                      className={`w-full text-left px-1 py-0.5 rounded text-xs transition-colors ${isActive && activeTab[c.id] === tab.id
-                        ? (isDark ? 'bg-white/15 text-white' : 'bg-teal-100 text-teal-700 font-medium')
-                        : (isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/5' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50')
+                      className={`w-full text-left px-2 py-1 rounded-md text-xs transition-colors ${isActive && activeTab[c.id] === tab.id
+                        ? (isDark ? 'bg-white/20 text-white font-semibold' : 'bg-slate-200/80 text-slate-900 font-semibold')
+                        : (isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/5' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60')
                         }`}>
                       {tab.label}
                     </button>
@@ -308,9 +308,9 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
                   <div className="ml-5 mb-0.5 space-y-0.5">
                     {TOOL_TABS[t.id].map(tab => (
                       <button key={tab.id} onClick={() => { onSelect(t.id); onSelectTab(t.id, tab.id); }}
-                        className={`w-full text-left px-2 py-1 rounded text-xs transition-colors ${isActive && activeTab[t.id] === tab.id
-                          ? (isDark ? 'bg-white/15 text-white' : 'bg-teal-100 text-teal-700 font-medium')
-                          : (isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/5' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50')
+                        className={`w-full text-left px-2 py-1 rounded-md text-xs transition-colors ${isActive && activeTab[t.id] === tab.id
+                          ? (isDark ? 'bg-white/20 text-white font-semibold' : 'bg-slate-200/80 text-slate-900 font-semibold')
+                          : (isDark ? 'text-white/40 hover:text-white/70 hover:bg-white/5' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60')
                           }`}>
                         {tab.label}
                       </button>
@@ -397,9 +397,23 @@ const ALL_BODY_THEME_CLASSES = Object.values(APP_THEMES).map(t => t.bodyClass).f
 export default function Home() {
   const { user, profile, isLoadingAuth, isPasswordRecovery } = useAuth();
   const isMobile = useIsMobile();
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bibabenchbuddy_active_tool');
+      return saved && ALL_IDS.includes(saved) ? saved : null;
+    } catch {
+      return null;
+    }
+  });
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
-  const [visitedIds, setVisitedIds] = useState(() => new Set());
+  const [visitedIds, setVisitedIds] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bibabenchbuddy_active_tool');
+      return saved && ALL_IDS.includes(saved) ? new Set([saved]) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showSettings, setShowSettings] = useState(false);
   const [showAuthWelcome, setShowAuthWelcome] = useState(() => {
@@ -409,6 +423,16 @@ export default function Home() {
       return true;
     }
   });
+
+  useEffect(() => {
+    try {
+      if (active) {
+        localStorage.setItem('bibabenchbuddy_active_tool', active);
+      } else {
+        localStorage.removeItem('bibabenchbuddy_active_tool');
+      }
+    } catch {}
+  }, [active]);
 
   useEffect(() => {
     if (!user) return;
@@ -438,7 +462,21 @@ export default function Home() {
   }, [isPasswordRecovery]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState({});
+  const [activeTab, setActiveTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bibabenchbuddy_active_tab');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bibabenchbuddy_active_tab', JSON.stringify(activeTab));
+    } catch {}
+  }, [activeTab]);
+
   const [historyData, setHistoryData] = useState(null);
   const [editingTab, setEditingTab] = useState(null); // { toolKey, tabId, name }
   const [contextMenu, setContextMenu] = useState(null); // { x: number, y: number, toolKey: string, tab: object }

@@ -10,6 +10,7 @@ import { HiMiniTableCells } from "react-icons/hi2";
 import { BsGraphUpArrow } from "react-icons/bs";
 import { copyAsHtmlTable } from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 
@@ -116,6 +117,7 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
   useEffect(() => {
     if (historyData && historyData.toolId === 'protein') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d) {
         if (d.tab) setTab(d.tab);
@@ -132,68 +134,44 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
     }
   }, [historyData]);
 
-  useEffect(() => {
-    if (
-      isRestoring ||
-      (tab === 'standards' &&
-        standards.every(s => !s.abs) &&
-        unknowns.every(u => !u.abs))
-    ) return;
-    if (!isActive) return;
+  const handleSaveToHistory = () => {
+    let preview = 'Protein concentration calculation';
 
-    const debounce = setTimeout(() => {
-      let preview = 'Protein concentration calculation';
+    if (tab === 'standards') {
+      const numValidUnknowns = unknowns.filter(u => u.abs).length;
+      const numValidStds = standards.filter(s => s.abs).length;
 
-      if (tab === 'standards') {
-        const numValidUnknowns = unknowns.filter(u => u.abs).length;
-        const numValidStds = standards.filter(s => s.abs).length;
-
-        if (numValidUnknowns > 0) {
-          preview = `${numValidUnknowns} sample${numValidUnknowns > 1 ? 's' : ''} calculated`;
-        } else {
-          preview = `Standard curve, ${numValidStds} point${numValidStds !== 1 ? 's' : ''}`;
-        }
-      } else if (tab === 'prep') {
-        const prepCount = prepSamples.filter(sample => parseFloat(sample.concentration) > 0).length;
-        preview = prepCount > 0
-          ? `SDS-PAGE prep, ${prepCount} sample${prepCount > 1 ? 's' : ''}`
-          : 'SDS-PAGE sample prep';
+      if (numValidUnknowns > 0) {
+        preview = `${numValidUnknowns} sample${numValidUnknowns > 1 ? 's' : ''} calculated`;
+      } else {
+        preview = `Standard curve, ${numValidStds} point${numValidStds !== 1 ? 's' : ''}`;
       }
+    } else if (tab === 'prep') {
+      const prepCount = prepSamples.filter(sample => parseFloat(sample.concentration) > 0).length;
+      preview = prepCount > 0
+        ? `SDS-PAGE prep, ${prepCount} sample${prepCount > 1 ? 's' : ''}`
+        : 'SDS-PAGE sample prep';
+    }
 
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'protein',
-        toolName: 'BCA assay',
-        data: {
-          preview,
-          tab,
-          wrVolume,
-          sampleVolInWR,
-          standards,
-          unknowns,
-          proteinLoad,
-          sampleBufferX,
-          prepTotalVol,
-          prepSamples
-        }
-      });
-    }, 1000);
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'protein',
+      toolName: 'BCA assay',
+      data: {
+        preview,
+        tab,
+        wrVolume,
+        sampleVolInWR,
+        standards,
+        unknowns,
+        proteinLoad,
+        sampleBufferX,
+        prepTotalVol,
+        prepSamples
+      }
+    });
+  };
 
-    return () => clearTimeout(debounce);
-  }, [
-    tab,
-    wrVolume,
-    sampleVolInWR,
-    standards,
-    unknowns,
-    proteinLoad,
-    sampleBufferX,
-    prepTotalVol,
-    prepSamples,
-    unknownResults,
-    isRestoring,
-    addHistoryItem
-  ]);
   const wrVol = parseFloat(wrVolume) || 1;
   const sVol = parseFloat(sampleVolInWR) || 10;
 
@@ -396,14 +374,17 @@ export default function ProteinConcCalculator({ externalTab, onTabChange, histor
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-sm">
-          <HiMiniChartBar className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 text-white shadow-sm">
+            <HiMiniChartBar className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">BCA assay</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">BCA / Bradford standard curve & SDS-PAGE sample prep</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">BCA assay</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">BCA / Bradford standard curve & SDS-PAGE sample prep</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>

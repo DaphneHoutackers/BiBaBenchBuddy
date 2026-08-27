@@ -10,6 +10,7 @@ import { Scissors, Plus, Trash2, FlaskConical, Layers, Table, AlertTriangle } fr
 import EnzymeSearch from '@/components/shared/EnzymeSearch';
 import CopyTableButton from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 import { getEnzymeDisplayName, getSelectableEnzymes } from '@/lib/enzymes';
@@ -121,7 +122,6 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
   const [batchDefaultNg, setBatchDefaultNg] = useState('1000');
   const [batchDefaultEnzymes, setBatchDefaultEnzymes] = useState([]);
   const [batchResults, setBatchResults] = useState(null);
-
   const { addHistoryItem } = useHistory();
   const sessionId = useRef(makeId());
   const isRestoring = useRef(false);
@@ -130,6 +130,7 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
   useEffect(() => {
     if (historyData?.data && historyData.toolId === 'digest') {
       isRestoring.current = true;
+      if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d.tab) setTab(d.tab);
       if (d.dnaConc !== undefined) setDnaConc(d.dnaConc);
@@ -150,62 +151,37 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
     }
   }, [historyData]);
 
-  // Save history
-  useEffect(() => {
-    if (isRestoring.current) return;
+  const handleSaveToHistory = () => {
+    let preview = tab === 'single'
+      ? `Digest: ${selectedEnzymes.length > 0 ? selectedEnzymes.map(getEnzymeDisplayName).join(', ') : 'Custom'}`
+      : `Batch Digest (${batchSamples.length} samples)`;
+    if (tab === 'single' && desiredDna) {
+      preview += ` (${desiredDna} ng)`;
+    }
 
-    const timeout = setTimeout(() => {
-      if (!isActive) return;
-      const hasSingle = tab === 'single' && dnaConc && desiredDna;
-      const hasBatch = tab === 'batch' && batchSamples.some(s => s.conc);
-
-      if (hasSingle || hasBatch) {
-        addHistoryItem({
-          id: sessionId.current,
-          toolId: 'digest',
-          toolName: 'Digestion',
-          data: {
-            preview:
-              tab === 'single'
-                ? `Digest: ${selectedEnzymes.length > 0 ? selectedEnzymes.map(getEnzymeDisplayName).join(', ') : 'Custom'}`
-                : `Batch Digest (${batchSamples.length} samples)`,
-            tab,
-            dnaConc,
-            desiredDna,
-            dnaRole,
-            selectedEnzymes,
-            totalVolume,
-            enzymeVolume,
-            enzymeType,
-            autoDilute,
-            minVol,
-            batchSamples,
-            batchTotalVol,
-            batchEnzymeVol,
-            batchEnzymeType,
-          }
-        });
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'digest',
+      toolName: 'Digestion',
+      data: {
+        preview,
+        tab,
+        dnaConc,
+        desiredDna,
+        dnaRole,
+        selectedEnzymes,
+        totalVolume,
+        enzymeVolume,
+        enzymeType,
+        autoDilute,
+        minVol,
+        batchSamples,
+        batchTotalVol,
+        batchEnzymeVol,
+        batchEnzymeType,
       }
-    }, 2000);
-
-    return () => clearTimeout(timeout);
-  }, [
-    tab,
-    dnaConc,
-    desiredDna,
-    dnaRole,
-    selectedEnzymes,
-    totalVolume,
-    enzymeVolume,
-    enzymeType,
-    autoDilute,
-    minVol,
-    batchSamples,
-    batchTotalVol,
-    batchEnzymeVol,
-    batchEnzymeType,
-    addHistoryItem
-  ]);
+    });
+  };
 
   // Filter enzymes based on selected enzyme type
   const getFilteredEnzymes = (type) => {
@@ -287,14 +263,17 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-purple-400 text-white shadow-sm">
-          <BiGame className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-500 to-purple-400 text-white shadow-sm">
+            <BiGame className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Digestion</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Single or batch digest mix calculator</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Digestion</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Single or batch digest mix calculator</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
@@ -366,7 +345,7 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                     <Label className="text-xs sm:text-sm text-slate-600 dark:text-slate-200">DNA Type</Label>
                     <div className="flex gap-1">
                       {['insert', 'vector'].map(role => (
-                        <button key={role} onClick={() => setDnaRole(role)}
+                        <button type="button" key={role} onClick={() => setDnaRole(role)}
                           className={`flex-1 py-1.5 px-2.5 rounded-md text-xs font-semibold border transition-colors flex items-center justify-center gap-1.5 ${dnaRole === role ? 'bg-rose-500 text-white border-rose-500' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>
                           {role === 'insert' ? '⧦ Insert' : '◎ Vector'}
                         </button>
@@ -632,6 +611,7 @@ export default function DigestCalculator({ externalTab, onTabChange, historyData
                             <div className="flex gap-1.5 flex-1">
                               {['insert', 'vector'].map(role => (
                                 <button 
+                                  type="button"
                                   key={role} 
                                   onClick={() => setBatchSamples(batchSamples.map(x => x.id === s.id ? { ...x, dnaRole: role } : x))}
                                   className={`w-18 py-1 h-8 px-2 rounded text-[10px] font-bold border transition-colors flex items-center justify-center gap-1 ${s.dnaRole === role ? 'bg-rose-500 text-white border-rose-500' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}>

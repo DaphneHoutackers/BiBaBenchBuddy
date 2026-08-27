@@ -8,6 +8,7 @@ import { Beaker, FlaskConical, AlertTriangle, ChevronDown, ChevronUp, Trash2, Sp
 import { GoBeaker } from "react-icons/go";
 import LysisBufferBuilder from '@/components/calculators/LysisBufferBuilder';
 import AIBufferChat from '@/components/calculators/AIBufferChat';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 
@@ -250,6 +251,7 @@ export default function BufferCalculator({ historyData, isActive, externalTab, o
   useEffect(() => {
     if (historyData && historyData.toolId === 'buffer') {
       setIsRestoring(true);
+      if (historyData.id) sessionId.current = historyData.id;
       if (historyData.data) {
         if (historyData.data.activeTab) setActiveTab(historyData.data.activeTab);
         if (historyData.data.selectedBuffer) setSelectedBuffer(historyData.data.selectedBuffer);
@@ -260,26 +262,20 @@ export default function BufferCalculator({ historyData, isActive, externalTab, o
     }
   }, [historyData]);
 
-  useEffect(() => {
-    if (isRestoring || activeTab === 'ai' || !isActive) return;
-
-    const timeout = setTimeout(() => {
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'buffer',
-        toolName: 'Buffer Preparation',
-        data: {
-          preview: `Buffer: ${selectedBuffer} (${desiredVolume} mL)`,
-          activeTab,
-          selectedBuffer,
-          desiredVolume,
-          showProtocol,
-        }
-      });
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  }, [activeTab, selectedBuffer, desiredVolume, showProtocol, isRestoring, addHistoryItem]);
+  const handleSaveToHistory = () => {
+    addHistoryItem({
+      id: sessionId.current,
+      toolId: 'buffer',
+      toolName: 'Buffer Preparation',
+      data: {
+        preview: `Buffer: ${selectedBuffer} (${desiredVolume} mL)`,
+        activeTab,
+        selectedBuffer,
+        desiredVolume,
+        showProtocol,
+      }
+    });
+  };
 
   // ensure selectedBuffer exists in allBuffers (in case of deleted recipe)
   const safeSelected = allBuffers[selectedBuffer] ? selectedBuffer : 'TAE (50×)';
@@ -313,14 +309,17 @@ export default function BufferCalculator({ historyData, isActive, externalTab, o
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-600 to-yellow-200 text-white shadow-sm">
-          <GoBeaker className="w-6 h-6" />
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-gradient-to-br from-orange-600 to-yellow-200 text-white shadow-sm">
+            <GoBeaker className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Buffer Preparation</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Recipes, component functions & complete protocols</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Buffer Preparation</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Recipes, component functions & complete protocols</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); onTabChange?.(v); }}>

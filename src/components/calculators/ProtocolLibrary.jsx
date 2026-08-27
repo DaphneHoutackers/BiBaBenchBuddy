@@ -598,18 +598,7 @@ export default function ProtocolLibrary({ historyData, isActive, settings, user,
     }
   }, [historyData]);
 
-  React.useEffect(() => {
-    if (isRestoring || activeTab === 'ai' || (!search && selectedCategory === 'All' && activeTab === 'library') || !isActive) return;
-    const debounce = setTimeout(() => {
-      addHistoryItem({
-        id: sessionId.current,
-        toolId: 'protocol',
-        title: `Protocol Library${search ? ` (Search: ${search})` : ''}`,
-        data: { search, selectedCategory, activeTab }
-      });
-    }, 1000);
-    return () => clearTimeout(debounce);
-  }, [search, selectedCategory, activeTab, isRestoring, addHistoryItem]);
+
 
   const allProtocols = [...customProtocols, ...PROTOCOLS];
   const categories = ['All', ...Array.from(new Set(allProtocols.map(p => p.category)))];

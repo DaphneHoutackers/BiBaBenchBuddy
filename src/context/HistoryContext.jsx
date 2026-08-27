@@ -34,6 +34,22 @@ function buildRemoteRow(item, userId) {
   };
 }
 
+function deduplicateHistory(items) {
+  if (!Array.isArray(items)) return [];
+  const seen = new Set();
+  return items.filter((item) => {
+    if (!item) return false;
+    if (HIDDEN_HISTORY_TOOL_IDS.has(item.toolId)) return true;
+
+    // Deduplicate identical preview + tool content
+    const preview = item.data?.preview || '';
+    const key = `${item.toolId}_${preview}_${JSON.stringify(item.data || {})}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function HistoryProvider({ children }) {
   const { user } = useAuth();
   const [isRemoteLoading, setIsRemoteLoading] = useState(false);
@@ -54,7 +70,8 @@ export function HistoryProvider({ children }) {
     const key = getStorageKey();
     try {
       const saved = localStorage.getItem(key);
-      setHistory(saved ? JSON.parse(saved) : []);
+      const parsed = saved ? JSON.parse(saved) : [];
+      setHistory(deduplicateHistory(parsed));
     } catch {
       setHistory([]);
     }
@@ -99,9 +116,11 @@ export function HistoryProvider({ children }) {
 
     if (error || !data) return;
 
-    const normalized = [...data, ...(!hiddenError && hiddenData ? hiddenData : [])]
-      .map(normalizeRemoteItem)
-      .sort((a, b) => b.timestamp - a.timestamp);
+    const normalized = deduplicateHistory(
+      [...data, ...(!hiddenError && hiddenData ? hiddenData : [])]
+        .map(normalizeRemoteItem)
+        .sort((a, b) => b.timestamp - a.timestamp)
+    );
 
     setHistory(normalized);
     try {
@@ -170,16 +189,30 @@ export function HistoryProvider({ children }) {
         synced: false,
       };
 
-      const existingIndex = prev.findIndex((entry) => entry.id === normalizedItem.id);
+      // Find matching item by ID, or by identical tool and data payload
+      const existingIndex = prev.findIndex((entry) => {
+        if (entry.id === normalizedItem.id) return true;
+        if (
+          !HIDDEN_HISTORY_TOOL_IDS.has(entry.toolId) &&
+          entry.toolId === normalizedItem.toolId &&
+          (entry.data?.preview === normalizedItem.data?.preview || !entry.data?.preview) &&
+          JSON.stringify(entry.data) === JSON.stringify(normalizedItem.data)
+        ) {
+          return true;
+        }
+        return false;
+      });
 
       if (existingIndex !== -1) {
         const updated = [...prev];
+        const existing = updated[existingIndex];
         updated[existingIndex] = {
-          ...updated[existingIndex],
+          ...existing,
           ...normalizedItem,
-          // keep original createdAt so display date doesn't jump, but update timestamp for sort
-          createdAt: updated[existingIndex].createdAt,
+          id: existing.id,
+          createdAt: existing.createdAt,
           timestamp: now,
+          synced: false,
         };
 
         return updated.sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);

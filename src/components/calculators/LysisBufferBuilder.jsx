@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { FlaskConical, Check, Copy } from 'lucide-react';
 import { copyAsHtmlTable } from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 
 const formatNumber = (val) => {
@@ -130,29 +131,31 @@ export default function LysisBufferBuilder({ historyData, isActive, sessionId })
   const [isRestoring, setIsRestoring] = useState(false);
 
   React.useEffect(() => {
-    if (historyData && historyData.toolId === 'buffer' && historyData.data?.activeTab === 'lysis') {
+    if (historyData?.data && historyData.data.activeTab === 'lysis') {
       setIsRestoring(true);
       const d = historyData.data;
-      if (d.totalVol !== undefined) setTotalVol(d.totalVol);
+      if (d.totalVol) setTotalVol(d.totalVol);
       if (d.selections) setSelections(d.selections);
       if (d.customConcs) setCustomConcs(d.customConcs);
-      setTimeout(() => setIsRestoring(false), 50);
+      setTimeout(() => setIsRestoring(false), 500);
     }
   }, [historyData]);
 
-  React.useEffect(() => {
-    if (isRestoring || Object.keys(selections).length === 0 || !isActive) return;
-    const debounce = setTimeout(() => {
-      addHistoryItem({
-        id: sessionId,
-        toolId: 'buffer',
-        toolName: 'Buffer Preparation',
-        title: `Lysis Buffer (${totalVol}mL) - ${Object.keys(selections).length} components`,
-        data: { activeTab: 'lysis', totalVol, selections, customConcs }
-      });
-    }, 1000);
-    return () => clearTimeout(debounce);
-  }, [totalVol, selections, customConcs, isRestoring, addHistoryItem]);
+  const handleSaveToHistory = () => {
+    const componentCount = Object.keys(selections).length;
+    addHistoryItem({
+      id: historyData?.id || sessionId,
+      toolId: 'buffer',
+      toolName: 'Buffer Preparation',
+      data: {
+        preview: `Lysis Buffer (${totalVol} mL, ${componentCount} components)`,
+        activeTab: 'lysis',
+        totalVol,
+        selections,
+        customConcs,
+      }
+    });
+  };
 
   const toggle = (cat, name) => {
     setSelections(prev => {
@@ -224,14 +227,17 @@ export default function LysisBufferBuilder({ historyData, isActive, sessionId })
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3 mb-1">
-        <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white">
-          <FlaskConical className="w-4 h-4" />
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 text-white">
+            <FlaskConical className="w-4 h-4" />
+          </div>
+          <div>
+            <p className="font-semibold text-slate-700">Custom Lysis Buffer Builder</p>
+            <p className="text-xs text-slate-400">Select and customize buffer components</p>
+          </div>
         </div>
-        <div>
-          <p className="font-semibold text-slate-700">Custom Lysis Buffer Builder</p>
-          <p className="text-xs text-slate-400">Select and customize buffer components</p>
-        </div>
+        <SaveHistoryButton onSave={handleSaveToHistory} />
       </div>
 
       <div className="flex items-center gap-3">

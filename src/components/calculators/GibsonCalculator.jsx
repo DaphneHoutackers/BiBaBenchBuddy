@@ -4,13 +4,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GitMerge, FlaskConical, Plus, Trash2, Check, Info, Copy, AlertTriangle, Layers, Table } from 'lucide-react';
-import { FaRegCheckCircle } from "react-icons/fa";
 import { PiCircleDashedBold } from "react-icons/pi";
 import { copyAsHtmlTable } from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
+import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import MacColorPicker from '@/components/shared/MacColorPicker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useHistory } from '@/context/HistoryContext';
@@ -130,16 +129,23 @@ function NumInputStepper({ value, onChange, className = "", ...props }) {
   );
 }
 
+const formatCleanDecimal = (num) => {
+  if (num === null || num === undefined || isNaN(Number(num))) return '';
+  const rounded = Math.round(Number(num) * 10) / 10;
+  return rounded.toString();
+};
+
 const formatNumber = (val) => {
-  if (val === undefined || val === null) return '';
+  if (val === undefined || val === null || val === '') return '';
   const num = Number(val);
   if (isNaN(num)) return val;
-  return num.toString();
+  const rounded = Math.round(num * 100) / 100;
+  return rounded.toString();
 };
 
 const isAtMaxAmount = (value, maxValue) => {
   const current = parseFloat(value);
-  return Number.isFinite(current) && Number.isFinite(maxValue) && Math.abs(current - maxValue) < 0.05;
+  return Number.isFinite(current) && Number.isFinite(maxValue) && maxValue > 0 && Math.abs(current - maxValue) < 0.05;
 };
 
 function getOptimalVectorAmount(vectorConc, vectorLength, inserts, totalVolume, isEquimolar, foldExcess) {
@@ -147,8 +153,16 @@ function getOptimalVectorAmount(vectorConc, vectorLength, inserts, totalVolume, 
   const l_vec = parseFloat(vectorLength);
   if (isNaN(c_vec) || isNaN(l_vec) || c_vec <= 0 || l_vec <= 0) return null;
 
+  const validInserts = (inserts || []).filter(ins => {
+    const c = parseFloat(ins.concentration || ins.conc);
+    const l = parseFloat(ins.length);
+    return !isNaN(c) && !isNaN(l) && c > 0 && l > 0;
+  });
+
+  if (validInserts.length === 0) return null;
+
   let sumTerms = 0;
-  for (const ins of inserts) {
+  for (const ins of validInserts) {
     const c_ins = parseFloat(ins.concentration || ins.conc);
     const l_ins = parseFloat(ins.length);
     const r_ins = isEquimolar ? 1 : (
@@ -156,9 +170,7 @@ function getOptimalVectorAmount(vectorConc, vectorLength, inserts, totalVolume, 
         ? parseFloat(ins.ratio)
         : (parseFloat(foldExcess) || 3)
     );
-    if (isNaN(c_ins) || isNaN(l_ins) || c_ins <= 0 || l_ins <= 0 || isNaN(r_ins) || r_ins < 0) {
-      return null;
-    }
+    if (isNaN(r_ins) || r_ins < 0) return null;
     sumTerms += (r_ins * l_ins) / (l_vec * c_ins);
   }
 
@@ -215,7 +227,7 @@ function calcGibsonMix({
     return { 
       id: ins.id,
       name: ins.name, 
-      amount: insertNg.toFixed(1), 
+      amount: formatCleanDecimal(insertNg), 
       volume: volumeToUse, 
       displayVol: volumeToUse, 
       isLow, 
@@ -245,7 +257,7 @@ function calcGibsonMix({
   const bbOnlyTotalVol = Math.max(0, controlWaterVol) + finalVectorVol + masterMixVol;
 
   return {
-    vectorAmount: targetVectorNg.toFixed(1),
+    vectorAmount: formatCleanDecimal(targetVectorNg),
     vectorVolume: finalVectorVol.toFixed(2),
     rawVectorVolume: finalVectorVolUnadjusted,
     vectorLow,
@@ -265,8 +277,9 @@ function calcGibsonMix({
 }
 
 // ─── Single Gibson Tab ───────────────────────────────────────────
-function SingleGibson({ historyData, isActive, sessionId }) {
+function SingleGibson({ historyData, isActive, sessionId, saveRef }) {
   const tableRef = useRef(null);
+  const totalVolume = '10';
   const defaultSingleFragments = [
     { id: 1, name: 'Vector', concentration: '', length: '', isVector: true },
     { id: 2, name: 'Insert 1', concentration: '', length: '', ratio: '3', savedRatio: '3', isVector: false },
@@ -302,19 +315,6 @@ function SingleGibson({ historyData, isActive, sessionId }) {
     return defaultSingleFragments;
   });
   
-  const [isEquimolar, setIsEquimolar] = useState(() => {
-    const saved = localStorage.getItem('bibabench_gibson_single_state');
-    if (saved) {
-      try {
-        const d = JSON.parse(saved);
-        if (d.isEquimolar !== undefined) return d.isEquimolar;
-      } catch {}
-    }
-    return false;
-  });
-  
-  const totalVolume = '10';
-  
   const [foldExcess, setFoldExcess] = useState(() => {
     const saved = localStorage.getItem('bibabench_gibson_single_state');
     if (saved) {
@@ -334,7 +334,18 @@ function SingleGibson({ historyData, isActive, sessionId }) {
         if (d.vectorNg !== undefined) return d.vectorNg;
       } catch {}
     }
-    return '100';
+    return '50';
+  });
+  
+  const [isEquimolar, setIsEquimolar] = useState(() => {
+    const saved = localStorage.getItem('bibabench_gibson_single_state');
+    if (saved) {
+      try {
+        const d = JSON.parse(saved);
+        if (d.isEquimolar !== undefined) return d.isEquimolar;
+      } catch {}
+    }
+    return false;
   });
   
   const [results, setResults] = useState(null);
@@ -375,33 +386,35 @@ function SingleGibson({ historyData, isActive, sessionId }) {
     localStorage.setItem('bibabench_gibson_single_state', JSON.stringify(state));
   }, [fragments, foldExcess, vectorNg, isEquimolar, isRestoring]);
 
+  const handleSaveToHistory = () => {
+    const vector = fragments.find(f => f.isVector);
+    const preview =
+      vector && vector.name && vector.name !== 'Vector'
+      ? `Gibson: ${vector.name} + ${fragments.length - 1} inserts`
+      : `Gibson (${fragments.length} parts)`;
+
+    addHistoryItem({
+      id: historyData?.id || sessionId,
+      toolId: 'gibson',
+      toolName: 'Gibson',
+      data: {
+        tab: 'single',
+        preview,
+        fragments,
+        foldExcess,
+        vectorNg,
+        isEquimolar,
+      }
+    });
+  };
+
   useEffect(() => {
-    if (isRestoring || (fragments.length === 2 && !fragments[0].length && !fragments[1].length) || !isActive) return;
+    if (saveRef) {
+      saveRef.current = handleSaveToHistory;
+    }
+  });
 
-    const debounce = setTimeout(() => {
-      const vector = fragments.find(f => f.isVector);
-      const preview =
-        vector && vector.name && vector.name !== 'Vector'
-        ? `Gibson: ${vector.name} + ${fragments.length - 1} inserts`
-        : `Gibson (${fragments.length} parts)`;
 
-      addHistoryItem({
-        id: sessionId,
-        toolId: 'gibson',
-        toolName: 'Gibson',
-        data: {
-          tab: 'single',
-          preview,
-          fragments,
-          foldExcess,
-          vectorNg,
-          isEquimolar,
-        }
-      });
-    }, 1000);
-
-    return () => clearTimeout(debounce);
-  }, [fragments, foldExcess, vectorNg, isEquimolar, isRestoring, addHistoryItem, isActive, sessionId]);
 
   const addFragment = () => {
     const newId = Math.max(...fragments.map(f => f.id)) + 1;
@@ -447,7 +460,7 @@ function SingleGibson({ historyData, isActive, sessionId }) {
       foldExcess
     );
     if (maxVal !== null && maxVal > 0) {
-      setVectorNg(maxVal.toFixed(1));
+      setVectorNg(formatCleanDecimal(maxVal));
     }
   };
 
@@ -473,12 +486,12 @@ function SingleGibson({ historyData, isActive, sessionId }) {
   const copyTable = () => {
     if (!results) return;
     const ctrl = results.controlWaterVolume;
-    const rows = [['Components', 'Gibson (µL)', 'BB-only (µL)']];
-    rows.push([fragments.find(f => f.isVector)?.name || 'Vector', (results.vectorLow ? '*' : '') + results.vectorVolume, (results.vectorLow ? '*' : '') + results.vectorVolume]);
-    results.inserts.forEach(ins => rows.push([ins.name, (ins.isLow ? '*' : '') + ins.volume, '—']));
-    rows.push(['2× NEBuilder HiFi Master Mix', results.masterMixVolume, results.masterMixVolume]);
-    rows.push(['MQ', results.waterVolume, ctrl]);
-    rows.push(['Total', results.gibsonTotalVolume, results.bbOnlyTotalVolume]);
+    const rows = [['Ratio', 'Components', 'Gibson (µL)', 'BB-only (µL)']];
+    rows.push(['', 'MQ', results.waterVolume, ctrl]);
+    rows.push(['1', fragments.find(f => f.isVector)?.name || 'Vector', (results.vectorLow ? '*' : '') + results.vectorVolume, (results.vectorLow ? '*' : '') + results.vectorVolume]);
+    results.inserts.forEach(ins => rows.push([ins.ratio, ins.name, (ins.isLow ? '*' : '') + ins.volume, '—']));
+    rows.push(['', '2× NEBuilder HiFi Master Mix', results.masterMixVolume, results.masterMixVolume]);
+    rows.push(['', 'Total', results.gibsonTotalVolume, results.bbOnlyTotalVolume]);
     copyAsHtmlTable(rows);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -547,15 +560,12 @@ function SingleGibson({ historyData, isActive, sessionId }) {
           </CardHeader>
           <CardContent className="space-y-3">
             {vector && (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 dark:border-emerald-800 dark:bg-emerald-900/20">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 min-w-0 dark:border-slate-700 dark:bg-slate-800/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge variant="secondary" className="shrink-0 bg-emerald-100 text-xs text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-                    Vector
-                  </Badge>
                   <Input
                     value={vector.name}
                     onChange={(e) => updateFragment(vector.id, 'name', e.target.value)}
-                    className="h-6 min-w-0 border-0 bg-transparent px-0 text-sm font-medium focus:ring-0"
+                    className="h-6.5 w-44 border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-700/60 px-2 text-xs font-bold text-slate-800 dark:text-slate-100 rounded-md focus:bg-white dark:focus:bg-slate-900 transition-colors"
                     placeholder="Vector"
                   />
                 </div>
@@ -563,11 +573,11 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
                     <Label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Conc. (ng/µL)</Label>
-                    <NumInput placeholder="50" value={vector.concentration} onChange={(e) => updateFragment(vector.id, 'concentration', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 animate-none mt-0.5 w-full" />
+                    <NumInput placeholder="50" value={vector.concentration} onChange={(e) => updateFragment(vector.id, 'concentration', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 animate-none mt-0.5 w-full" />
                   </div>
                   <div>
                     <Label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Length (bp)</Label>
-                    <NumInput placeholder="5000" value={vector.length} onChange={(e) => updateFragment(vector.id, 'length', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 animate-none mt-0.5 w-full" />
+                    <NumInput placeholder="5000" value={vector.length} onChange={(e) => updateFragment(vector.id, 'length', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 animate-none mt-0.5 w-full" />
                   </div>
                   <div>
                     <Label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Amount (ng)</Label>
@@ -575,7 +585,7 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                       <NumInput
                         value={vectorNg}
                         onChange={(e) => setVectorNg(e.target.value)}
-                        className="h-7 text-xs border-slate-200 dark:border-slate-700 pl-2 pr-10 animate-none w-full"
+                        className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 pl-2 pr-10 animate-none w-full"
                         placeholder="100"
                       />
                       <Button
@@ -583,10 +593,10 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                         variant="outline"
                         size="sm"
                         onClick={handleMaximizeVector}
-                        className={`absolute right-1.5 text-[9px] h-5 px-1.5 font-bold shadow-sm border rounded ${singleVectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 hover:bg-emerald-450 dark:bg-emerald-500 dark:text-white dark:border-emerald-600' : 'text-emerald-600 border-emerald-200 dark:border-emerald-800 dark:text-emerald-450 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 bg-white/95 dark:bg-slate-900/95'}`}
+                        className={`absolute right-1.5 text-[9px] h-5 px-1.5 font-bold shadow-xs border rounded ${singleVectorIsMax ? 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600' : 'text-slate-600 border-slate-200 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white/95 dark:bg-slate-900/95'}`}
                         title="Auto-calculate maximum vector DNA"
                       >
-                        {singleVectorIsMax ? <FaRegCheckCircle className="w-2 h-2" strokeWidth={3} /> : 'Max'}
+                        {singleVectorIsMax ? <Check className="w-2.5 h-2.5 text-slate-700 dark:text-slate-200" strokeWidth={3} /> : 'Max'}
                       </Button>
                     </div>
                   </div>
@@ -596,16 +606,16 @@ function SingleGibson({ historyData, isActive, sessionId }) {
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {insertFragments.map((fragment, insertIndex) => (
-                <div key={fragment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3 min-w-0 dark:border-slate-700 dark:bg-slate-800/50">
+                <div key={fragment.id} className="rounded-lg border border-slate-200 bg-white p-3 min-w-0 dark:border-slate-700 dark:bg-slate-900 shadow-xs">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Badge variant="secondary" className="shrink-0 bg-slate-200 text-xs text-slate-600 dark:bg-slate-700 dark:text-slate-300">
-                        Insert {insertIndex + 1}
-                      </Badge>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="shrink-0 inline-flex items-center justify-center h-7 w-7 rounded-md bg-slate-100 text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700">
+                        {insertIndex + 1}
+                      </span>
                       <Input
                         value={fragment.name}
                         onChange={(e) => updateFragment(fragment.id, 'name', e.target.value)}
-                        className="h-6 min-w-0 border-0 bg-transparent px-0 text-sm font-medium focus:ring-0"
+                        className="h-6.5 min-w-0 border border-slate-200 dark:border-slate-700 bg-slate-100/90 dark:bg-slate-700/60 px-2 text-xs font-bold text-slate-800 dark:text-slate-100 rounded-md focus:bg-white dark:focus:bg-slate-900 transition-colors"
                         placeholder={`Insert ${insertIndex + 1}`}
                       />
                     </div>
@@ -619,11 +629,11 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <Label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Conc. (ng/µL)</Label>
-                      <NumInput placeholder="50" value={fragment.concentration} onChange={(e) => updateFragment(fragment.id, 'concentration', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 animate-none mt-0.5 w-full" />
+                      <NumInput placeholder="50" value={fragment.concentration} onChange={(e) => updateFragment(fragment.id, 'concentration', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 animate-none mt-0.5 w-full" />
                     </div>
                     <div>
                       <Label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Length (bp)</Label>
-                      <NumInput placeholder="1000" value={fragment.length} onChange={(e) => updateFragment(fragment.id, 'length', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 animate-none mt-0.5 w-full" />
+                      <NumInput placeholder="1000" value={fragment.length} onChange={(e) => updateFragment(fragment.id, 'length', e.target.value)} className="h-7 text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 animate-none mt-0.5 w-full" />
                     </div>
                     <div className={`col-span-2 grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-end ${isEquimolar && insertIndex !== 2 ? 'opacity-50' : ''}`}>
                       <div>
@@ -640,20 +650,40 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                             </TooltipContent>
                           </Tooltip>
                         </div>
-                        <NumInputStepper
-                          step="1"
-                          min="0"
-                          value={fragment.ratio}
-                          disabled={isEquimolar}
-                          onChange={(e) => updateFragment(fragment.id, 'ratio', e.target.value)}
-                          className={`h-7 w-full text-center text-xs border-slate-200 dark:border-slate-700 px-1 animate-none ${isEquimolar ? 'bg-slate-50 dark:bg-slate-800/50 cursor-not-allowed' : ''}`}
-                        />
+                        {isEquimolar ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className="w-full cursor-not-allowed">
+                                <NumInputStepper
+                                  step="1"
+                                  min="0"
+                                  value={fragment.ratio}
+                                  disabled={true}
+                                  onChange={(e) => updateFragment(fragment.id, 'ratio', e.target.value)}
+                                  className="h-7 w-full text-center text-xs border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-1 animate-none pointer-events-none"
+                                />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className="bg-slate-800 text-white text-xs border-slate-700 shadow-lg">
+                              <p>Turn off Equimolar to customize ratios.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <NumInputStepper
+                            step="1"
+                            min="0"
+                            value={fragment.ratio}
+                            disabled={false}
+                            onChange={(e) => updateFragment(fragment.id, 'ratio', e.target.value)}
+                            className="h-7 w-full text-center text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1 animate-none"
+                          />
+                        )}
                       </div>
                       {insertIndex === 2 && (
                         <button
                           type="button"
                           onClick={toggleEquimolar}
-                          className={`flex items-center justify-center gap-1 px-2 rounded border transition-all h-7 text-[9px] uppercase tracking-tight font-bold ${isEquimolar ? 'bg-green-500/50 text-white dark:text-green-300 border-green-600 shadow-sm' : 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800'}`}
+                          className={`flex items-center justify-center gap-1 px-2.5 rounded border transition-all h-7 text-[9px] uppercase tracking-tight font-bold ${isEquimolar ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-xs' : 'bg-white text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'}`}
                         >
                           Equimolar
                         </button>
@@ -665,7 +695,7 @@ function SingleGibson({ historyData, isActive, sessionId }) {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button onClick={addFragment} className="w-full bg-teal-600 hover:bg-teal-700 text-white h-9 animate-none">
+              <Button onClick={addFragment} variant="outline" className="w-full border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 h-9 font-medium animate-none">
                 <Plus className="w-4 h-4 mr-2" /> Add Insert
               </Button>
             </div>
@@ -716,18 +746,25 @@ function SingleGibson({ historyData, isActive, sessionId }) {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-blue-50 dark:bg-blue-900/30">
-                    <th className="text-left py-2 px-3 font-bold text-slate-700 dark:text-slate-200 rounded-l">Components</th>
+                    <th className="text-center py-2 px-2 font-bold text-slate-700 dark:text-slate-200 w-14 rounded-l">Ratio</th>
+                    <th className="text-left py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Components</th>
                     <th className="text-right py-2 px-3 font-bold text-slate-700 dark:text-slate-200">Gibson</th>
                     <th className="text-right py-2 px-3 font-bold text-slate-700 dark:text-slate-200 rounded-r">BB-only</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="py-2 px-2 text-center text-slate-400 dark:text-slate-500"></td>
                     <td className="py-2 px-3 font-normal text-slate-700 dark:text-slate-200">MQ</td>
                     <td className="py-2 px-3 text-right font-semibold">{formatNumber(results.waterVolume)}</td>
                     <td className="py-2 px-3 text-right font-semibold">{formatNumber(controlWater)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="py-2 px-2 text-center">
+                      <span className="inline-flex items-center justify-center h-5.5 min-w-[22px] px-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs">
+                        1
+                      </span>
+                    </td>
                     <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
                       <span>{fragments.find(f => f.isVector)?.name || 'Vector'}</span>
                       <span className="text-rose-600 dark:text-rose-400 font-semibold ml-1 text-xs">({formatNumber(results.vectorAmount)} ng)</span>
@@ -742,6 +779,11 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                   </tr>
                   {results.inserts.map((ins, idx) => (
                     <tr key={idx} className="border-b border-slate-100 dark:border-slate-800">
+                      <td className="py-2 px-2 text-center">
+                        <span className="inline-flex items-center justify-center h-5.5 min-w-[22px] px-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs">
+                          {ins.ratio}
+                        </span>
+                      </td>
                       <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
                         <span>{ins.name}</span>
                         <span className="text-rose-600 dark:text-rose-400 font-semibold ml-1 text-xs">({formatNumber(ins.amount)} ng)</span>
@@ -754,11 +796,13 @@ function SingleGibson({ historyData, isActive, sessionId }) {
                     </tr>
                   ))}
                   <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <td className="py-2 px-2 text-center text-slate-400 dark:text-slate-500"></td>
                     <td className="py-2 px-3 text-slate-600 dark:text-slate-300">2× NEBuilder HiFi</td>
                     <td className="py-2 px-3 text-right font-bold">{formatNumber(results.masterMixVolume)}</td>
                     <td className="py-2 px-3 text-right font-bold">{formatNumber(results.masterMixVolume)}</td>
                   </tr>
                   <tr className="border-t-2 border-slate-300 bg-slate-50 dark:border-slate-600 dark:bg-slate-800/50">
+                    <td className="py-2 px-2 text-center text-slate-400 dark:text-slate-500"></td>
                     <td className="py-2 px-3 font-bold text-slate-800 dark:text-slate-100">Total (µL)</td>
                     <td className="py-2 px-3 text-right font-bold text-slate-800 dark:text-slate-100">{renderSingleTotalValue(results.gibsonTotalVolume, gibsonTotalOver)}</td>
                     <td className="py-2 px-3 text-right font-bold text-slate-800 dark:text-slate-100">{renderSingleTotalValue(results.bbOnlyTotalVolume, bbOnlyTotalOver)}</td>
@@ -768,13 +812,6 @@ function SingleGibson({ historyData, isActive, sessionId }) {
               {(results.vectorLow || results.inserts.some(i => i.isLow)) && (
                 <p className="text-xs text-rose-600 dark:text-rose-400 mt-1 italic">* Volume is below your minimum threshold — use the dilution suggested above.</p>
               )}
-              
-              <div className="mt-3 mb-1 px-1">
-                <p className="text-sm text-slate-700 dark:text-slate-300">
-                  <span className="font-semibold text-slate-500 dark:text-slate-400 mr-2">Ratio:</span>
-                  <span className="font-bold">1 : {results.inserts.map(i => i.ratio).join(' : ')}</span>
-                </p>
-              </div>
 
               <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 rounded-lg">
                 <p className="text-xs text-blue-700 dark:text-blue-300">
@@ -821,7 +858,7 @@ function defaultGibson(id) {
   };
 }
 
-function BatchGibson({ historyData, isActive, sessionId }) {
+function BatchGibson({ historyData, isActive, sessionId, saveRef }) {
   const tableRef = useRef(null);
   const [gibsons, setGibsons] = useState(() => {
     const saved = localStorage.getItem('bibabench_gibson_batch_state');
@@ -858,22 +895,24 @@ function BatchGibson({ historyData, isActive, sessionId }) {
     localStorage.setItem('bibabench_gibson_batch_state', JSON.stringify({ gibsons }));
   }, [gibsons]);
 
-  useEffect(() => {
-    if (isRestoring.current) return;
-    const timeout = setTimeout(() => {
-      if (!isActive) return;
-      const anyFilled = gibsons.some(gib => gib.vectorConc && gib.vectorLength && gib.inserts.every(i => i.conc && i.length));
-      if (anyFilled) {
-        addHistoryItem({
-          id: sessionId,
-          toolId: 'gibson',
-          toolName: 'Gibson',
-          data: { tab: 'batch', gibsons }
-        });
+  const handleSaveToHistory = () => {
+    addHistoryItem({
+      id: historyData?.id || sessionId,
+      toolId: 'gibson',
+      toolName: 'Gibson',
+      data: {
+        tab: 'batch',
+        preview: `Batch Gibson (${gibsons.length} mixes)`,
+        gibsons,
       }
-    }, 2000);
-    return () => clearTimeout(timeout);
-  }, [gibsons, addHistoryItem, isActive, sessionId]);
+    });
+  };
+
+  useEffect(() => {
+    if (saveRef) {
+      saveRef.current = handleSaveToHistory;
+    }
+  });
 
   const addGibson = () => {
     const id = Math.max(...gibsons.map(g => g.id)) + 1;
@@ -936,7 +975,7 @@ function BatchGibson({ historyData, isActive, sessionId }) {
         g.foldExcess
       );
       if (maxVal !== null && maxVal > 0) {
-        return { ...g, vectorAmount: maxVal.toFixed(1) };
+        return { ...g, vectorAmount: formatCleanDecimal(maxVal) };
       }
       return g;
     }));
@@ -1077,21 +1116,25 @@ function BatchGibson({ historyData, isActive, sessionId }) {
             const vectorIsMax = isAtMaxAmount(lig.vectorAmount, maxVectorAmount);
             return (
               <Card key={lig.id} className="w-fit flex-shrink-0 border-0 shadow-sm bg-white dark:bg-slate-900" style={{ borderLeft: `4px solid ${color.border}` }}>
-                <CardHeader className="pb-1.5 pt-2.5">
+                <CardHeader className="pb-2 pt-2.5 px-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-800/30 rounded-t-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-2">
                         <MacColorPicker
                           value={color.border && color.border.startsWith('#') ? color.border : '#22c55e'}
                           onChange={(nextColor) => {
                             const newTheme = generateColorTheme(nextColor);
                             updateLigation(lig.id, 'color', newTheme);
                           }}
-                          buttonClassName="flex h-3.5 w-3.5 items-center justify-center rounded-full"
-                          swatchClassName="h-2.5 w-2.5 rounded-full"
+                          buttonClassName="flex h-5 w-5 items-center justify-center rounded-full"
+                          swatchClassName="h-4 w-4 rounded-full shadow-xs"
                         />
-                        <Input value={lig.label} onChange={e => updateLigation(lig.id, 'label', e.target.value)}
-                          className="h-6 text-xs font-bold border-0 bg-transparent p-0 w-28 focus:ring-0 focus:border-b focus:border-slate-300 dark:focus:border-slate-700" style={{ color: color.text }} />
+                        <Input 
+                          value={lig.label} 
+                          onChange={e => updateLigation(lig.id, 'label', e.target.value)}
+                          className="h-6.5 text-xs font-bold border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-0.5 rounded-md w-28 focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                          style={{ color: color.text }} 
+                        />
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -1111,7 +1154,7 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                         variant="outline" 
                         size="sm" 
                         onClick={() => addInsert(lig.id)}
-                        className="h-7 px-2 text-xs font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:bg-slate-55 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded flex items-center gap-1 shadow-sm animate-none"
+                        className="h-7 px-2 text-xs font-semibold bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded flex items-center gap-1 shadow-sm animate-none"
                         title="Add Insert Fragment"
                       >
                         <Plus className="w-3.5 h-3.5" />
@@ -1120,15 +1163,18 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pb-3 pt-0">
+                <CardContent className="p-3 pt-2.5">
                   <div className="flex gap-2 overflow-x-auto pb-1.5">
                     {/* Vector Column */}
                     <div className="w-[130px] flex-shrink-0 border-r border-slate-150 dark:border-slate-800 pr-2">
-                      <Input 
-                        value={lig.vectorName || 'Vector'} 
-                        onChange={e => updateLigation(lig.id, 'vectorName', e.target.value)}
-                        className="h-5 text-xs border-0 bg-transparent p-0 font-bold text-slate-700 dark:text-slate-200 tracking-wide w-full focus:ring-0 focus:border-b focus:border-slate-200 mb-1" 
-                      />
+                      <div className="mb-1.5">
+                        <Input 
+                          value={lig.vectorName || 'Vector'} 
+                          onChange={e => updateLigation(lig.id, 'vectorName', e.target.value)}
+                          className="h-6 text-xs border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-0.5 rounded-md font-bold text-slate-800 dark:text-slate-100 tracking-wide w-full focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                          placeholder="Vector"
+                        />
+                      </div>
                       <div className="space-y-1">
                         <div>
                           <Label className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Conc. (ng/µL)</Label>
@@ -1152,10 +1198,10 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                               variant="outline" 
                               size="sm" 
                               onClick={() => handleMaximizeVectorForCard(lig.id)}
-                              className={`absolute right-1.5 text-[9px] h-5 px-1 font-bold shadow-sm border rounded animate-none ${vectorIsMax ? 'bg-emerald-300/65 text-white border-emerald-400 hover:bg-emerald-600 dark:bg-emerald-500 dark:text-white dark:border-emerald-600' : 'text-emerald-600 border-emerald-200 dark:border-emerald-800 dark:text-emerald-450 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 bg-white/95 dark:bg-slate-900/95'}`}
+                              className={`absolute right-1.5 text-[9px] h-5 px-1 font-bold shadow-xs border rounded animate-none ${vectorIsMax ? 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-700 dark:text-slate-100 dark:border-slate-600' : 'text-slate-600 border-slate-200 dark:border-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 bg-white/95 dark:bg-slate-900/95'}`}
                               title="Auto-calculate maximum vector DNA"
                             >
-                              {vectorIsMax ? <FaRegCheckCircle className="w-3 h-3" strokeWidth={3} /> : 'Max'}
+                              {vectorIsMax ? <Check className="w-2.5 h-2.5 text-slate-700 dark:text-slate-200" strokeWidth={3} /> : 'Max'}
                             </Button>
                           </div>
                         </div>
@@ -1165,16 +1211,21 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                     {/* Inserts Columns */}
                     {lig.inserts.map(ins => (
                       <div key={ins.id} className="w-[130px] flex-shrink-0 border-r border-slate-150 dark:border-slate-800 last:border-r-0 pr-2 last:pr-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <Input value={ins.name} onChange={e => updateInsert(lig.id, ins.id, 'name', e.target.value)}
-                            className="h-5 text-xs border-0 bg-transparent p-0 font-bold text-slate-700 dark:text-slate-200 tracking-wide w-full focus:ring-0 focus:border-b focus:border-slate-200" />
+                        <div className="flex items-center justify-between gap-1 mb-1.5">
+                          <Input 
+                            value={ins.name} 
+                            onChange={e => updateInsert(lig.id, ins.id, 'name', e.target.value)}
+                            className="h-6 text-xs border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-0.5 rounded-md font-bold text-slate-800 dark:text-slate-100 tracking-wide w-full focus:bg-white dark:focus:bg-slate-900 transition-colors" 
+                            placeholder={`Insert ${ins.id}`}
+                          />
                           {lig.inserts.length > 1 && (
                             <button 
+                              type="button"
                               onClick={() => removeInsert(lig.id, ins.id)} 
-                              className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 ml-1 flex-shrink-0 animate-none" 
+                              className="text-slate-400 hover:text-red-500 dark:hover:text-red-400 ml-1 flex-shrink-0 animate-none p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800" 
                               title="Delete insert"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>
@@ -1216,20 +1267,41 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                               )}
                             </div>
                             <div className="relative flex items-center">
+                              {lig.isEquimolar ? (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="w-full cursor-not-allowed">
+                                      <NumInputStepper 
+                                        step="1"
+                                        min="0"
+                                        value="1" 
+                                        disabled={true}
+                                        onChange={e => updateInsert(lig.id, ins.id, 'ratio', e.target.value)} 
+                                        placeholder="3" 
+                                        className="h-6.5 w-full text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none bg-slate-50 dark:bg-slate-900/50 pointer-events-none"
+                                      />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="bg-slate-800 text-white text-xs border-slate-700 shadow-lg">
+                                    <p>Turn off Equimolar to customize ratios.</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              ) : (
                                 <NumInputStepper 
                                   step="1"
                                   min="0"
-                                  value={lig.isEquimolar ? '1' : ins.ratio} 
-                                  disabled={lig.isEquimolar}
+                                  value={ins.ratio} 
+                                  disabled={false}
                                   onChange={e => updateInsert(lig.id, ins.id, 'ratio', e.target.value)} 
                                   placeholder="3" 
-                                  className={`h-6.5 w-full text-xs border-slate-200 dark:border-slate-700 px-1.5 animate-none ${lig.isEquimolar ? 'bg-slate-50 dark:bg-slate-900/50 cursor-not-allowed' : ''}`}
+                                  className="h-6.5 w-full text-xs border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-1.5 animate-none"
                                 />
+                              )}
                               {lig.inserts.indexOf(ins) === 2 && (
                                 <button 
                                   type="button"
                                   onClick={() => updateLigation(lig.id, 'isEquimolar', !lig.isEquimolar)}
-                                  className={`absolute right-0.5 text-[9px] h-5 px-1.5 border rounded font-bold transition-all ${lig.isEquimolar ? 'bg-emerald-300/65 text-white border-emerald-400 hover:bg-emerald-600 dark:bg-emerald-300 dark:text-white dark:border-emerald-600' : 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700 hover:bg-blue-200 dark:hover:bg-blue-800'}`}
+                                  className={`absolute right-0.5 text-[9px] h-5 px-1.5 border rounded font-bold transition-all z-10 ${lig.isEquimolar ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 dark:border-slate-100 shadow-xs' : 'bg-white text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/60'}`}
                                 >
                                   Equimolar
                                 </button>
@@ -1452,7 +1524,7 @@ function BatchGibson({ historyData, isActive, sessionId }) {
                       const ratios = ['1', ...lig.inserts.map(ins => lig.isEquimolar ? '1' : ins.ratio)];
                       if (!r) return <td key={lig.id} colSpan={2} style={{ border: 'none', padding: '0' }} />;
                       const ngParts = [formatNumber(r.vectorAmount), ...r.inserts.map(ins => formatNumber(ins.amount))];
-                      const totalNg = (parseFloat(r.vectorAmount) + r.inserts.reduce((s, ins) => s + parseFloat(ins.amount), 0)).toFixed(1);
+                      const totalNg = formatCleanDecimal(parseFloat(r.vectorAmount) + r.inserts.reduce((s, ins) => s + parseFloat(ins.amount), 0));
                       return (
                         <td key={lig.id} colSpan={2} style={{ border: 'none', padding: '0 6px', background: 'transparent' }}>
                           <div className="w-full rounded-lg border-2 py-1.5 px-1.5 shadow-sm" style={{ borderColor: color.border, background: color.header44, color: color.text }}>
@@ -1506,16 +1578,24 @@ function BatchGibson({ historyData, isActive, sessionId }) {
 // ─── Main Gibson Calculator Wrapper ──────────────────────────────
 export default function GibsonCalculator({ historyData, isActive, externalTab, onTabChange, tabs }) {
   const sessionId = useRef(makeId()).current;
-  const [tab, setTab] = useState(externalTab || (() => {
-    return localStorage.getItem('bibabench_gibson_active_tab') || 'single';
-  }));
+  const [tab, setTab] = useState(externalTab || 'single');
+  const singleSaveRef = useRef(null);
+  const batchSaveRef = useRef(null);
+
+  const handleSaveToHistory = () => {
+    if (tab === 'single' && singleSaveRef.current) {
+      singleSaveRef.current();
+    } else if (tab === 'batch' && batchSaveRef.current) {
+      batchSaveRef.current();
+    }
+  };
 
   useEffect(() => {
     if (externalTab) setTab(externalTab);
   }, [externalTab]);
 
   useEffect(() => {
-    if (historyData?.data?.tab) setTab(historyData.data.tab);
+    if (historyData?.data?.tab) setTab(historyData.data.tab === 'multi' ? 'batch' : historyData.data.tab);
   }, [historyData]);
 
   useEffect(() => {
@@ -1525,14 +1605,17 @@ export default function GibsonCalculator({ historyData, isActive, externalTab, o
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-400 to-purple-500 text-white shadow-sm">
-            <PiCircleDashedBold className="w-6 h-6" />
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-rose-400 to-purple-500 text-white shadow-sm">
+              <PiCircleDashedBold className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Gibson Assembly</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Optimal DNA amounts with total DNA volume &le; 5 µL per reaction</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">Gibson Assembly</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Optimal DNA amounts with total DNA volume &le; 5 µL per reaction</p>
-          </div>
+          <SaveHistoryButton onSave={handleSaveToHistory} />
         </div>
 
         <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
@@ -1551,10 +1634,10 @@ export default function GibsonCalculator({ historyData, isActive, externalTab, o
         </Tabs>
 
         <div style={{ display: tab === 'single' ? 'block' : 'none' }} className="mt-4 animate-none">
-          <SingleGibson historyData={tab === 'single' ? historyData : null} isActive={isActive && tab === 'single'} sessionId={sessionId} />
+          <SingleGibson historyData={tab === 'single' ? historyData : null} isActive={isActive && tab === 'single'} sessionId={sessionId} saveRef={singleSaveRef} />
         </div>
         <div style={{ display: tab === 'batch' ? 'block' : 'none' }} className="mt-4 animate-none">
-          <BatchGibson historyData={tab === 'batch' ? historyData : null} isActive={isActive && tab === 'batch'} sessionId={sessionId} />
+          <BatchGibson historyData={tab === 'batch' ? historyData : null} isActive={isActive && tab === 'batch'} sessionId={sessionId} saveRef={batchSaveRef} />
         </div>
       </div>
     </TooltipProvider>
