@@ -760,10 +760,8 @@ function SingleGibson({ historyData, isActive, sessionId, saveRef }) {
                     <td className="py-2 px-3 text-right font-semibold">{formatNumber(controlWater)}</td>
                   </tr>
                   <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <td className="py-2 px-2 text-center">
-                      <span className="inline-flex items-center justify-center h-5.5 min-w-[22px] px-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs">
-                        1
-                      </span>
+                    <td className="py-2 px-2 text-center font-bold text-slate-700 dark:text-slate-300 text-xs">
+                      1
                     </td>
                     <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
                       <span>{fragments.find(f => f.isVector)?.name || 'Vector'}</span>
@@ -779,10 +777,8 @@ function SingleGibson({ historyData, isActive, sessionId, saveRef }) {
                   </tr>
                   {results.inserts.map((ins, idx) => (
                     <tr key={idx} className="border-b border-slate-100 dark:border-slate-800">
-                      <td className="py-2 px-2 text-center">
-                        <span className="inline-flex items-center justify-center h-5.5 min-w-[22px] px-1 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-2xs">
-                          {ins.ratio}
-                        </span>
+                      <td className="py-2 px-2 text-center font-bold text-slate-700 dark:text-slate-300 text-xs">
+                        {ins.ratio}
                       </td>
                       <td className="py-2 px-3 text-slate-600 dark:text-slate-300">
                         <span>{ins.name}</span>
