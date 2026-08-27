@@ -10,45 +10,6 @@ import SaveHistoryButton from '@/components/shared/SaveHistoryButton';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
 
-function NumInput({ value, onChange, ...props }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handler = e => e.preventDefault();
-    el.addEventListener('wheel', handler, { passive: false });
-    return () => el.removeEventListener('wheel', handler);
-  }, []);
-
-  const handleChange = (e) => {
-    if (props.type === "number") {
-      if (onChange) onChange(e);
-      return;
-    }
-    const el = e.target;
-    const originalValue = el.value;
-    const originalSelStart = el.selectionStart;
-    let cleaned = originalValue.replace(/,/g, '.').replace(/[^0-9.]/g, '');
-    const parts = cleaned.split('.');
-    if (parts.length > 2) {
-      cleaned = parts[0] + '.' + parts.slice(1).join('');
-    }
-    const diff = cleaned.length - originalValue.length;
-    if (onChange) {
-      onChange({ ...e, target: { ...e.target, value: cleaned } });
-    }
-    if (originalSelStart !== null) {
-      requestAnimationFrame(() => {
-        if (ref.current) {
-          ref.current.setSelectionRange(originalSelStart + diff, originalSelStart + diff);
-        }
-      });
-    }
-  };
-
-  return <Input ref={ref} type={props.type || "text"} inputMode={props.type === "number" ? undefined : "decimal"} value={value} onChange={handleChange} {...props} />;
-}
-
 // Format a number using superscript notation instead of 3.13e+1
 function formatConc(val) {
   if (val === 0) return '0';
@@ -81,7 +42,7 @@ const VOL_UNITS = {
 import CopyTableButton from '@/components/shared/CopyTableButton';
 import CopyImageButton from '@/components/shared/CopyImageButton';
 
-export default function DilutionCalculator({ historyData, isActive, externalTab, onTabChange, tabs }) {
+export default function DilutionCalculator({ historyData, externalTab, onTabChange, tabs }) {
   const { addHistoryItem } = useHistory();
   const sessionId = useRef(makeId());
   const tableRef = useRef(null);
@@ -119,11 +80,8 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
   const [volumePerWell, setVolumePerWell] = useState('100');
   const [serialResult, setSerialResult] = useState(null);
 
-  const [isRestoring, setIsRestoring] = useState(false);
-
   useEffect(() => {
     if (historyData && historyData.toolId === 'dilution') {
-      setIsRestoring(true);
       if (historyData.id) sessionId.current = historyData.id;
       const d = historyData.data;
       if (d) {
@@ -149,7 +107,6 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
         if (d.numDilutions !== undefined) setNumDilutions(d.numDilutions);
         if (d.volumePerWell !== undefined) setVolumePerWell(d.volumePerWell);
       }
-      setTimeout(() => setIsRestoring(false), 50);
     }
   }, [historyData]);
 
@@ -274,7 +231,6 @@ export default function DilutionCalculator({ historyData, isActive, externalTab,
       
       const v1Display = Number((v1L / VOL_UNITS[v1Unit]).toFixed(2));
       const diluentDisplay = Number((diluentL / VOL_UNITS[v1Unit]).toFixed(2));
-      const v2Display = Number((v2L / VOL_UNITS[v2Unit]).toFixed(2));
 
       if (solveFor === 'v1') {
         instruction = `Take ${Number(value.toFixed(2))} ${v1Unit} of stock and add to ${diluentDisplay} ${v1Unit} of diluent.`;

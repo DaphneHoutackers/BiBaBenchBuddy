@@ -277,7 +277,7 @@ function calcGibsonMix({
 }
 
 // ─── Single Gibson Tab ───────────────────────────────────────────
-function SingleGibson({ historyData, isActive, sessionId, saveRef }) {
+function SingleGibson({ historyData, sessionId, saveRef }) {
   const tableRef = useRef(null);
   const totalVolume = '10';
   const defaultSingleFragments = [
@@ -854,7 +854,7 @@ function defaultGibson(id) {
   };
 }
 
-function BatchGibson({ historyData, isActive, sessionId, saveRef }) {
+function BatchGibson({ historyData, sessionId, saveRef }) {
   const tableRef = useRef(null);
   const [gibsons, setGibsons] = useState(() => {
     const saved = localStorage.getItem('bibabench_gibson_batch_state');
@@ -1572,7 +1572,7 @@ function BatchGibson({ historyData, isActive, sessionId, saveRef }) {
 }
 
 // ─── Main Gibson Calculator Wrapper ──────────────────────────────
-export default function GibsonCalculator({ historyData, isActive, externalTab, onTabChange, tabs }) {
+export default function GibsonCalculator({ historyData, externalTab, onTabChange, tabs }) {
   const sessionId = useRef(makeId()).current;
   const [tab, setTab] = useState(externalTab || 'single');
   const singleSaveRef = useRef(null);
@@ -1630,10 +1630,10 @@ export default function GibsonCalculator({ historyData, isActive, externalTab, o
         </Tabs>
 
         <div style={{ display: tab === 'single' ? 'block' : 'none' }} className="mt-4 animate-none">
-          <SingleGibson historyData={tab === 'single' ? historyData : null} isActive={isActive && tab === 'single'} sessionId={sessionId} saveRef={singleSaveRef} />
+          <SingleGibson historyData={tab === 'single' ? historyData : null} sessionId={sessionId} saveRef={singleSaveRef} />
         </div>
         <div style={{ display: tab === 'batch' ? 'block' : 'none' }} className="mt-4 animate-none">
-          <BatchGibson historyData={tab === 'batch' ? historyData : null} isActive={isActive && tab === 'batch'} sessionId={sessionId} saveRef={batchSaveRef} />
+          <BatchGibson historyData={tab === 'batch' ? historyData : null} sessionId={sessionId} saveRef={batchSaveRef} />
         </div>
       </div>
     </TooltipProvider>

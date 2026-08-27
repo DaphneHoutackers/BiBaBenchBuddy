@@ -99,7 +99,7 @@ function DnaMass({ ng }) {
   return <span className="text-rose-600 dark:text-rose-400 font-semibold">({ng} ng)</span>;
 }
 
-export default function DigestCalculator({ externalTab, onTabChange, historyData, isActive, tabs }) {
+export default function DigestCalculator({ externalTab, onTabChange, historyData, tabs }) {
   const singleTableRef = useRef(null);
   const batchTableRef = useRef(null);
   const [tab, setTab] = useState(externalTab || 'single');
