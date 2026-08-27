@@ -1,5 +1,6 @@
-import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, shell, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -30,13 +31,116 @@ const createMenu = () => {
     {
       label: 'Edit',
       submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
+        { role: 'undo', accelerator: 'CmdOrCtrl+Z' },
+        { role: 'redo', accelerator: 'Shift+CmdOrCtrl+Z' },
         { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' },
+        { role: 'cut', accelerator: 'CmdOrCtrl+X' },
+        { role: 'copy', accelerator: 'CmdOrCtrl+C' },
+        { role: 'paste', accelerator: 'CmdOrCtrl+V' },
+        { role: 'selectAll', accelerator: 'CmdOrCtrl+A' },
+      ],
+    },
+    {
+      label: 'Opmaak',
+      submenu: [
+        {
+          label: 'Titel',
+          accelerator: 'Shift+CmdOrCtrl+T',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'title');
+          },
+        },
+        {
+          label: 'Koptekst',
+          accelerator: 'Shift+CmdOrCtrl+H',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h1');
+          },
+        },
+        {
+          label: 'Subkop',
+          accelerator: 'Shift+CmdOrCtrl+J',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h2');
+          },
+        },
+        {
+          label: 'Kop 3',
+          accelerator: 'Shift+CmdOrCtrl+I',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'h3');
+          },
+        },
+        {
+          label: 'Hoofdtekst',
+          accelerator: 'Shift+CmdOrCtrl+B',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'p');
+          },
+        },
+        {
+          label: 'Met één opmaak',
+          accelerator: 'Shift+CmdOrCtrl+M',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'code');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Opsommingstekenslijst',
+          accelerator: 'Shift+CmdOrCtrl+7',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'bullet');
+          },
+        },
+        {
+          label: 'Genummerde lijst',
+          accelerator: 'Shift+CmdOrCtrl+9',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'number');
+          },
+        },
+        {
+          label: 'Checklist',
+          accelerator: 'Shift+CmdOrCtrl+L',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'checklist');
+          },
+        },
+        {
+          label: 'Markeer als afgevinkt',
+          accelerator: 'Shift+CmdOrCtrl+U',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'toggle-check');
+          },
+        },
+        {
+          label: 'Blokcitaat',
+          accelerator: 'Alt+CmdOrCtrl+\'',
+          click: (_menuItem, browserWindow) => {
+            browserWindow?.webContents.send('note-format', 'quote');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Inspringing',
+          submenu: [
+            {
+              label: 'Verhoog',
+              accelerator: 'CmdOrCtrl+]',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'indent');
+              },
+            },
+            {
+              label: 'Verlaag',
+              accelerator: 'CmdOrCtrl+[',
+              click: (_menuItem, browserWindow) => {
+                browserWindow?.webContents.send('note-format', 'outdent');
+              },
+            },
+          ],
+        },
       ],
     },
     {
@@ -206,6 +310,100 @@ app.whenReady().then(async () => {
   if (app.isPackaged) {
     autoUpdater.checkForUpdatesAndNotify();
   }
+});
+
+ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title || 'Note'}</title>
+        <style>
+          @page { margin: 20mm; size: A4; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #1e293b;
+            margin: 0;
+            padding: 0;
+          }
+          h1.note-title {
+            font-size: 24px;
+            font-weight: 800;
+            margin: 0 0 16px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e2e8f0;
+          }
+          h1 { font-size: 20px; font-weight: 700; margin: 16px 0 8px 0; }
+          h2 { font-size: 17px; font-weight: 700; margin: 14px 0 6px 0; }
+          h3 { font-size: 15px; font-weight: 600; margin: 12px 0 4px 0; }
+          h4 { font-size: 13px; font-weight: 600; margin: 10px 0 4px 0; }
+          p { margin: 6px 0; font-size: 13px; }
+          blockquote {
+            margin: 10px 0;
+            border-left: 3px solid #94a3b8;
+            padding-left: 12px;
+            color: #475569;
+            font-style: italic;
+          }
+          ul, ol { margin: 6px 0; padding-left: 20px; font-size: 13px; }
+          ul[data-checklist] { list-style: none; padding-left: 0; }
+          ul[data-checklist] li {
+            position: relative;
+            padding-left: 24px;
+            margin: 4px 0;
+          }
+          ul[data-checklist] li input[type="checkbox"] {
+            position: absolute;
+            left: 0;
+            top: 3px;
+          }
+          .note-code pre {
+            background: #f1f5f9;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #e2e8f0;
+          }
+          a { color: #db2777; text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <h1 class="note-title">${title || 'Untitled note'}</h1>
+        <div>${html}</div>
+      </body>
+    </html>
+  `;
+
+  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(fullHtml)}`);
+  const pdfData = await win.webContents.printToPDF({
+    pageSize: 'A4',
+    printBackground: true,
+  });
+  win.destroy();
+
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: 'Save Note as PDF',
+    defaultPath: `${(title || 'note').replace(/[/\\?%*:|"<>]/g, '_')}.pdf`,
+    filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+  });
+
+  if (!canceled && filePath) {
+    await fs.promises.writeFile(filePath, pdfData);
+    shell.showItemInFolder(filePath);
+    return { success: true, filePath };
+  }
+  return { canceled: true };
 });
 
 // Set quitting flag so the window close handler allows actual quit
