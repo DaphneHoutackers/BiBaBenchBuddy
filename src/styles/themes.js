@@ -12,7 +12,7 @@ export const FONT_SIZES = [
 export const APP_THEMES = {
   // ── Curated ──
   default: {
-    label: 'Lab Default',
+    label: 'Default',
     icon: FlaskConical,
     group: 'special',
     bg: 'linear-gradient(270deg, #F7F7F8 0%, #F1F2F4 100%)',
@@ -51,7 +51,7 @@ export const APP_THEMES = {
     iconStyle: { background: 'linear-gradient(135deg, #555 0%, #222 100%)' },
   },
   minimal: {
-    label: 'Minimal White',
+    label: 'Minimal',
     icon: Snowflake,
     group: 'special',
     bg: '#ffffff',
@@ -78,7 +78,7 @@ export const APP_THEMES = {
     iconStyle: { background: 'linear-gradient(135deg, #3b5bdb 0%, #1e40af 100%)' },
   },
   macosGlass: {
-    label: 'MacOS Glass',
+    label: 'Glass',
     icon: Glasses,
     group: 'special',
     bg: 'linear-gradient(180deg, #F8F8FA 0%, #EEF0F3 100%)',

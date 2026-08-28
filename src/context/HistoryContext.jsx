@@ -105,6 +105,7 @@ export function HistoryProvider({ children }) {
       .select('*')
       .eq('user_id', user.id)
       .neq('toolid', '__seq_analyzer_library__')
+      .not('toolid', 'like', '__account_state__:%')
       .order('timestamp', { ascending: false })
       .limit(100);
 
@@ -129,6 +130,24 @@ export function HistoryProvider({ children }) {
       console.warn('Failed to persist remote history locally:', err);
     }
   }, [user, getStorageKey]);
+
+  // Keep already-open devices current and refresh again when a mobile/desktop
+  // app returns to the foreground. The user_id filter is backed by RLS.
+  useEffect(() => {
+    if (!user || !isSyncEnabled()) return undefined;
+    const refresh = () => loadRemoteHistory([]);
+    const channel = supabase.channel(`tool-history-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tool_history', filter: `user_id=eq.${user.id}` }, refresh)
+      .subscribe();
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, loadRemoteHistory]);
 
   useEffect(() => {
     if (!history || history.length === 0 && !user) return;

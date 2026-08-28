@@ -165,23 +165,24 @@ const EXP_FEATURES_KEY = 'seq_analyzer_exp_features_v1';
 const EXP_PRIMERS_KEY = 'seq_analyzer_exp_primers_v1';
 const EXP_ENZYMES_KEY = 'seq_analyzer_exp_enzymes_v1';
 
-const loadLib = () => { try { return JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); } catch { return []; } };
-const saveLib = (lib) => { try { localStorage.setItem(LIB_KEY, JSON.stringify(lib)); } catch { } };
 const getUserLibKey = (userId) => userId ? `${LIB_KEY}_${userId}` : LIB_KEY;
 const getLibraryHistoryId = (userId) => userId ? `${LIB_HISTORY_TOOL_ID}_${userId}` : LIB_HISTORY_TOOL_ID;
 export const loadUserLib = (userId) => {
+  // Libraries are private account data. Never fall back to the old unscoped
+  // key: that exposed the previous user's sequences after sign-out.
+  if (!userId) return [];
   try {
     const scoped = localStorage.getItem(getUserLibKey(userId));
     if (scoped) return JSON.parse(scoped);
-    return loadLib();
+    return [];
   } catch {
     return [];
   }
 };
 const saveUserLib = (userId, lib) => {
+  if (!userId) return;
   try {
     localStorage.setItem(getUserLibKey(userId), JSON.stringify(lib));
-    saveLib(lib);
   } catch { }
 };
 const toDateInputValue = (value) => {
@@ -1159,6 +1160,26 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const mapSearchInputRef = useRef(null);
 
   useEffect(() => {
+    const copySelectedFeature = event => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'c') return;
+      const target = event.target;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
+      if (selectedMapItem?.kind !== 'feature') return;
+      const feature = features[selectedMapItem.index];
+      if (!feature || !sequence) return;
+      const start = Math.max(0, Number(feature.start) || 0);
+      const end = Math.min(sequence.length, Number(feature.end) || start);
+      let featureSequence = sequence.slice(start, end);
+      if (Number(feature.strand) === -1) featureSequence = revComp(featureSequence);
+      if (!featureSequence) return;
+      event.preventDefault();
+      navigator.clipboard?.writeText(featureSequence);
+    };
+    window.addEventListener('keydown', copySelectedFeature);
+    return () => window.removeEventListener('keydown', copySelectedFeature);
+  }, [features, selectedMapItem, sequence]);
+
+  useEffect(() => {
     if (showMapSearch && mapSearchInputRef.current) {
       mapSearchInputRef.current.focus();
       mapSearchInputRef.current.select();
@@ -1453,6 +1474,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   useEffect(() => {
     if (!user) return;
     if (isRemoteLoading) return;
+    // Hydrate once per account. Re-applying an older remote snapshot while a
+    // new import is waiting for its debounce would otherwise delete the import.
+    if (libraryHydratedRef.current) return;
 
     const remoteLibrary = Array.isArray(librarySnapshot?.data?.library)
       ? librarySnapshot.data.library
@@ -2459,6 +2483,17 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     saveUserLib(user?.id, next);
   };
 
+  const openLibraryColorPicker = (event, entry) => {
+    event.stopPropagation();
+    const ids = selectedLibraryIds.includes(entry.id) ? selectedLibraryIds : [entry.id];
+    setActiveColorPicker({
+      type: 'library',
+      color: entry.color || '#475569',
+      rect: event.currentTarget.getBoundingClientRect(),
+      onChange: color => updateLibraryItemsColor(ids, color),
+    });
+  };
+
   const deleteLibraryItems = (itemIds) => {
     const ids = new Set(itemIds);
     itemIds.forEach(id => {
@@ -2855,7 +2890,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const y = e.clientY;
     hoverTimerRef.current = setTimeout(() => {
       setPopupData({ x, y, kind, item, idx: item.sourceIndex ?? index });
-    }, 450);
+    }, 1000);
   };
 
   const clearHoverPopup = () => clearTimeout(hoverTimerRef.current);
@@ -3865,7 +3900,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                               )}
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setShowFolderColorPickerId(showFolderColorPickerId === entry.id ? null : entry.id); }}
+                                onClick={(e) => openLibraryColorPicker(e, entry)}
                                 className="relative flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100"
                                 title={isFolder ? 'Change folder color' : 'Change file color'}
                               >
@@ -4249,7 +4284,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         <div 
           onClick={e => e.stopPropagation()}
           className="fixed z-[100] bg-white border border-slate-200 text-slate-800 p-4 rounded-xl shadow-2xl text-xs w-64"
-          style={{ left: popupData.x, top: popupData.y, transform: 'translate(-50%, -100%)', marginTop: '-15px' }}>
+          style={popupData.y < 330
+            ? { left: Math.max(136, Math.min(window.innerWidth - 136, popupData.x)), top: popupData.y + 16, transform: 'translateX(-50%)' }
+            : { left: Math.max(136, Math.min(window.innerWidth - 136, popupData.x)), top: popupData.y - 16, transform: 'translate(-50%, -100%)' }}>
           <div className="mb-1 flex items-center gap-2">
             {popupLabelEditing && popupData.kind === 'feature' ? (
               <Input
@@ -4282,7 +4319,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
               <div className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{popupData.item?.label || popupData.item?.name || popupData.item?.type}</div>
             )}
             {popupData.kind === 'feature' && (
-              <button
+              <><button
                 onClick={() => {
                   setPopupLabelDraft(popupData.item?.label || '');
                   setPopupLabelEditing(true);
@@ -4291,7 +4328,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 title="Rename feature"
               >
                 <Edit3 className="h-3.5 w-3.5" />
-              </button>
+              </button><button onClick={() => hideSelectedItem(popupData)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-teal-700" title="Hide feature"><EyeOff className="h-3.5 w-3.5" /></button></>
             )}
           </div>
           {popupData.kind && <div className="text-slate-500 mb-2 truncate text-[10px] uppercase font-bold tracking-wider">{popupData.kind}</div>}
@@ -4322,17 +4359,18 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             )}
           </div>
           <div className="mt-3 pt-2 border-t border-slate-100 space-y-2">
-            <div className="flex items-center gap-2">
-              <button onClick={() => openSelectedEditor(popupData)} className="px-2 py-1 rounded-md bg-teal-50 text-teal-700 font-bold hover:bg-teal-100">Bewerk</button>
-              <button onClick={() => hideSelectedItem(popupData)} className="px-2 py-1 rounded-md bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">Hide</button>
-              <button onClick={() => { if (popupData.kind === 'enzyme') clearEnzymeHighlight(popupData.item.name); else recolorSelectedItem(popupData, undefined); }} className="px-2 py-1 rounded-md bg-slate-100 text-slate-600 font-bold hover:bg-slate-200">Geen kleur</button>
-            </div>
             <div className="flex items-center gap-1.5">
+              <button type="button" onClick={event => { const rect = event.currentTarget.getBoundingClientRect(); setActiveColorPicker({ type: popupData.kind, color: popupData.item?.color || '#4a90d9', rect, onChange: color => recolorSelectedItem(popupData, color), onRemove: () => recolorSelectedItem(popupData, popupData.kind === 'feature' ? '#ffffff' : undefined) }); }} className="flex h-6 w-6 items-center justify-center rounded border border-slate-200 bg-white text-slate-500" title="Custom color"><Palette className="h-3.5 w-3.5" /></button>
+              <button onClick={() => { if (popupData.kind === 'enzyme') clearEnzymeHighlight(popupData.item.name); else recolorSelectedItem(popupData, '#ffffff'); }} className="relative h-6 w-6 overflow-hidden rounded border border-slate-200 bg-white" title="No color"><span className="absolute left-[-4px] top-1/2 h-px w-8 -rotate-45 bg-red-500" /></button>
               {RE_HIGHLIGHT_COLORS.slice(0, 6).map(c => (
-                <button key={c} onClick={() => recolorSelectedItem(popupData, c)} className="w-5 h-5 rounded-full border border-slate-200" style={{ backgroundColor: c }} />
+                <button key={c} onClick={() => recolorSelectedItem(popupData, c)} className="h-6 w-6 rounded border border-slate-200" style={{ backgroundColor: c }} />
               ))}
-              <MacColorPicker value={popupData.item?.color || '#4a90d9'} onChange={color => recolorSelectedItem(popupData, color)} swatchClassName="h-5 w-5 rounded-full" buttonClassName="rounded-full border border-slate-200 bg-white p-0.5" />
             </div>
+            {popupData.kind === 'feature' && (() => {
+              let saved = [];
+              try { saved = JSON.parse(localStorage.getItem('saved_colors_feature') || '[]'); } catch { saved = []; }
+              return saved.length > 0 ? <div className="flex items-center gap-1.5 border-t border-slate-100 pt-2">{saved.slice(0, 8).map(color => <button key={color} type="button" onClick={() => recolorSelectedItem(popupData, color)} className="h-6 w-6 rounded border border-slate-200" style={{ backgroundColor: color }} title={`Saved color ${color}`} />)}</div> : null;
+            })()}
           </div>
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"></div>
         </div>
@@ -4499,7 +4537,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       </div>
 
       {toolTab === 'alignment' && (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+        <div className="overflow-hidden bg-white border border-slate-200 rounded-xl shadow-sm">
           <AlignmentView key={`alignment-${activeTabId}`} library={library} seq={seq} seqName={seqName} features={features} language={settings?.language || 'en'} storageScope={user?.id || 'guest'} draftId={activeTabId} />
         </div>
       )}
@@ -4654,7 +4692,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                 <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); setShowFolderColorPickerId(showFolderColorPickerId === entry.id ? null : entry.id); }}
+                                  onClick={(e) => openLibraryColorPicker(e, entry)}
                                   className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100"
                                   title="Change folder color"
                                 >
@@ -4664,7 +4702,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             ) : (
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setShowFolderColorPickerId(showFolderColorPickerId === entry.id ? null : entry.id); }}
+                                onClick={(e) => openLibraryColorPicker(e, entry)}
                                 className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-slate-500 hover:bg-slate-100"
                                 title="Change file color"
                               >
@@ -5016,7 +5054,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   </>
                 )}
                 {viewMode === 'alignment' && (
-                  <div className="h-full overflow-auto p-4">
+                  <div className="h-full overflow-auto">
                     <AlignmentView key={`alignment-${activeTabId}`} library={library} seq={seq} seqName={seqName} features={features} language={settings?.language || 'en'} storageScope={user?.id || 'guest'} draftId={activeTabId} />
                   </div>
                 )}

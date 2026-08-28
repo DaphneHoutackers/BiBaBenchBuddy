@@ -22,6 +22,7 @@ import { supabase, isSyncEnabled } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import logo from '@/assets/icon-512.png';
+import { AccountRequired } from '@/components/tools/toolUtils';
 
 // Eagerly loaded calculators
 import DigestCalculator from '@/components/calculators/DigestCalculator';
@@ -44,6 +45,7 @@ const PlasmidAnalyzer = lazy(() => import('@/components/calculators/PlasmidAnaly
 const SETTINGS_KEY = 'biba_bench_buddy_settings';
 const AUTH_WELCOME_COMPLETED_KEY = 'biba_auth_welcome_completed';
 const HIDDEN_HISTORY_TOOL_IDS = new Set(['__seq_analyzer_library__']);
+const isHiddenHistoryTool = toolId => HIDDEN_HISTORY_TOOL_IDS.has(toolId) || String(toolId || '').startsWith('__account_state__:');
 
 class LazyToolErrorBoundary extends Component {
   constructor(props) {
@@ -205,7 +207,7 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
   const [showFullHistoryModal, setShowFullHistoryModal] = useState(false);
   const [historyQuery, setHistoryQuery] = useState('');
   const { history, deleteHistoryItem, clearHistory } = useHistory();
-  const visibleHistory = history.filter(item => !item.data?.hidden && !HIDDEN_HISTORY_TOOL_IDS.has(item.toolId));
+  const visibleHistory = history.filter(item => !item.data?.hidden && !isHiddenHistoryTool(item.toolId));
 
   const filteredHistory = useMemo(() => {
     if (!historyQuery.trim()) return visibleHistory;
@@ -648,6 +650,23 @@ export default function Home() {
     }
   }, [isPasswordRecovery]);
 
+  useEffect(() => {
+    const openAuth = () => setShowAuthWelcome(true);
+    window.addEventListener('bibabench:open-auth', openAuth);
+    return () => window.removeEventListener('bibabench:open-auth', openAuth);
+  }, []);
+
+  useEffect(() => {
+    const openSettingsShortcut = event => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+        event.preventDefault();
+        setShowSettings(true);
+      }
+    };
+    window.addEventListener('keydown', openSettingsShortcut);
+    return () => window.removeEventListener('keydown', openSettingsShortcut);
+  }, []);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -1049,6 +1068,9 @@ export default function Home() {
         </Suspense>
       </LazyToolErrorBoundary>
     );
+    const requireAccount = (toolName, component) => (
+      <AccountRequired toolName={toolName}>{component}</AccountRequired>
+    );
 
     switch (id) {
       case 'digest':
@@ -1062,13 +1084,13 @@ export default function Home() {
       case 'dilution':
         return <DilutionCalculator {...calculatorProps} externalTab={activeTab['dilution']} onTabChange={t => handleSelectTab('dilution', t)} tabs={renderToolTabs('dilution-' + (activeTab['dilution'] || 'c1v1'))} />;
       case 'buffer':
-        return renderLazy(<BufferMediumTool {...calculatorProps} />);
+        return requireAccount('Buffer & Medium', renderLazy(<BufferMediumTool {...calculatorProps} />));
       case 'plates':
-        return renderLazy(<UsefulTools {...calculatorProps} initialTool={id} />);
+        return requireAccount('Plate Labeler', renderLazy(<UsefulTools {...calculatorProps} initialTool={id} />));
       case 'notes':
-        return renderLazy(<NotesTool {...calculatorProps} />);
+        return requireAccount('Notes', renderLazy(<NotesTool {...calculatorProps} />));
       case 'agenda':
-        return renderLazy(<AgendaTool {...calculatorProps} />);
+        return requireAccount('Agenda', renderLazy(<AgendaTool {...calculatorProps} />));
       case 'protein':
         {
           const proteinSubtab = subtabId || activeTab['protein'] || 'standards';
@@ -1084,13 +1106,13 @@ export default function Home() {
           />;
         }
       case 'protocols':
-        return renderLazy(<ProtocolLibrary {...calculatorProps} externalTab={activeTab['protocols']} onTabChange={t => handleSelectTab('protocols', t)} tabs={renderToolTabs('protocols-' + (activeTab['protocols'] || 'library'))} />);
+        return requireAccount('Protocols', renderLazy(<ProtocolLibrary {...calculatorProps} externalTab={activeTab['protocols']} onTabChange={t => handleSelectTab('protocols', t)} tabs={renderToolTabs('protocols-' + (activeTab['protocols'] || 'library'))} />));
       case 'ai':
         return renderLazy(<AIAssistant {...calculatorProps} />);
       case 'gel':
         return renderLazy(<GelSimulator {...calculatorProps} externalTab={activeTab['gel']} onTabChange={t => handleSelectTab('gel', t)} tabs={renderToolTabs('gel-' + (activeTab['gel'] || 'dna'))} />);
       case 'plasmid':
-        return renderLazy(<PlasmidAnalyzer {...calculatorProps} tabs={renderToolTabs('plasmid')} />);
+        return requireAccount('Sequence Analyzer', renderLazy(<PlasmidAnalyzer {...calculatorProps} tabs={renderToolTabs('plasmid')} />));
       default:
         return null;
     }
@@ -1392,10 +1414,7 @@ export default function Home() {
               <div className="mb-2">
                 <div className="text-center mb-2">
                   <h2 className={`text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight ${titleColor}`}>
-                    Lab tools that{' '}
-                    <span className="bg-gradient-to-r from-teal-400 to-emerald-400 bg-clip-text text-transparent">
-                      actually save time
-                    </span>
+                    Lab tools that actually save time
                   </h2>
                 </div>
                 <ScienceJoke isDark={isDark} />
@@ -1407,7 +1426,7 @@ export default function Home() {
                     <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>Calculators</h3>
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
                       {CALCULATORS.map(calc => (
-                        <button key={calc.id} onClick={() => { setActive(calc.id); setHistoryData(null); }} className={`group flex h-[124px] flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
+                        <button key={calc.id} onClick={() => { setActive(calc.id); setHistoryData(null); }} className={`group flex min-h-[124px] flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
                           <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `bg-gradient-to-br ${calc.gradient}`}`} style={iconStyle || {}}><calc.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} /></div>
                           <p className={`mb-1 text-sm font-semibold leading-tight sm:text-base ${cardTextPrimary}`}>{calc.name}</p>
                         </button>
@@ -1423,11 +1442,11 @@ export default function Home() {
                       <div className={`grid grid-cols-2 gap-3 md:gap-4 ${group.columns}`}>
                         {group.tools.map(tool => (
                         <button key={tool.id} onClick={() => { setActive(tool.id); setHistoryData(null); }}
-                          className={`group flex h-[112px] min-w-0 flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
+                          className={`group flex min-h-[112px] min-w-0 flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
                           <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `${tool.direction || 'bg-gradient-to-br'} ${tool.gradient}`}`} style={iconStyle || {}}>
                             <tool.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} />
                           </div>
-                          <p className={`w-full truncate whitespace-nowrap text-sm font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</p>
+                          <p className={`w-full break-words text-sm font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</p>
                         </button>
                         ))}
                       </div>

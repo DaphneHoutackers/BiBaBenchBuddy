@@ -10,17 +10,9 @@ import ProtocolAIChat from '@/components/calculators/ProtocolAIChat';
 import ProtocolBuilder, { RenderSteps } from '@/components/calculators/ProtocolBuilder';
 import { useHistory } from '@/context/HistoryContext';
 import { makeId } from '@/utils/makeId';
+import { useStoredState } from '@/components/tools/toolUtils';
 
-// ─── Custom protocol localStorage helpers ─────────────────────────────────────
 const CUSTOM_KEY = 'biba_custom_protocols';
-function loadCustomProtocols() {
-  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY)) || []; } catch { return []; }
-}
-function saveCustomProtocols(protocols) {
-  // Strip non-serialisable calc functions before saving
-  const serialisable = protocols.map(p => ({ ...p, calc: undefined }));
-  localStorage.setItem(CUSTOM_KEY, JSON.stringify(serialisable));
-}
 
 
 const PROTOCOLS = [
@@ -540,7 +532,7 @@ export default function ProtocolLibrary({ historyData, isActive, settings, user,
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [activeTab, setActiveTab] = useState(externalTab || 'library');
   const [showBuilder, setShowBuilder] = useState(false);
-  const [customProtocols, setCustomProtocols] = useState(() => loadCustomProtocols());
+  const [customProtocols, setCustomProtocols] = useStoredState(CUSTOM_KEY, []);
 
   const handleSaveCustomProtocol = (protocol) => {
     // Rebuild the calc function at runtime (not serialised)
@@ -555,7 +547,6 @@ export default function ProtocolLibrary({ historyData, isActive, settings, user,
     };
     const updated = [withCalc, ...customProtocols];
     setCustomProtocols(updated);
-    saveCustomProtocols(updated);
     setShowBuilder(false);
     setActiveTab('library');
   };
@@ -563,7 +554,6 @@ export default function ProtocolLibrary({ historyData, isActive, settings, user,
   const handleDeleteCustomProtocol = (id) => {
     const updated = customProtocols.filter(p => p.id !== id);
     setCustomProtocols(updated);
-    saveCustomProtocols(updated);
   };
 
   // Rebuild calc fns for loaded custom protocols (they lose their fn on serialisation)

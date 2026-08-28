@@ -1,12 +1,98 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { LogIn, UserPlus } from 'lucide-react';
+import { useAuth } from '@/lib/AuthContext';
+import { isSyncEnabled, supabase } from '@/lib/supabase';
+import { makeId } from '@/utils/makeId';
+
+const STATE_TOOL_PREFIX = '__account_state__:';
+
+function accountKey(key, userId) {
+  return userId ? `${key}__user_${userId}` : null;
+}
 
 export function useStoredState(key, initialValue) {
+  const { user } = useAuth();
+  const scopedKey = accountKey(key, user?.id);
+  const hydratedUserRef = useRef(null);
   const [value, setValue] = useState(() => {
-    try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : initialValue; }
+    try { const raw = scopedKey ? localStorage.getItem(scopedKey) : null; return raw ? JSON.parse(raw) : initialValue; }
     catch { return initialValue; }
   });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage may be unavailable */ } }, [key, value]);
+
+  useEffect(() => {
+    let cancelled = false;
+    hydratedUserRef.current = null;
+    if (!user) { setValue(initialValue); return undefined; }
+    try {
+      const raw = localStorage.getItem(scopedKey);
+      setValue(raw ? JSON.parse(raw) : initialValue);
+    } catch { setValue(initialValue); }
+    if (isSyncEnabled()) {
+      supabase.from('tool_history').select('data').eq('user_id', user.id)
+        .eq('toolid', `${STATE_TOOL_PREFIX}${key}`).order('timestamp', { ascending: false }).limit(1).maybeSingle()
+        .then(({ data, error }) => {
+          if (cancelled || error || data?.data?.value === undefined) return;
+          setValue(data.data.value);
+          try { localStorage.setItem(scopedKey, JSON.stringify(data.data.value)); } catch {}
+        })
+        .finally(() => { if (!cancelled) hydratedUserRef.current = user.id; });
+    } else hydratedUserRef.current = user.id;
+    return () => { cancelled = true; };
+  }, [key, scopedKey, user?.id]);
+
+  useEffect(() => {
+    if (!user || !isSyncEnabled()) return undefined;
+    const toolid = `${STATE_TOOL_PREFIX}${key}`;
+    const applyRemote = payload => {
+      const row = payload.new;
+      if (row?.toolid !== toolid || row?.data?.value === undefined) return;
+      setValue(previous => JSON.stringify(previous) === JSON.stringify(row.data.value) ? previous : row.data.value);
+    };
+    const channel = supabase.channel(`account-state-${user.id}-${key}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tool_history', filter: `user_id=eq.${user.id}` }, applyRemote)
+      .subscribe();
+    const refresh = async () => {
+      const { data } = await supabase.from('tool_history').select('data').eq('user_id', user.id).eq('toolid', toolid).order('timestamp', { ascending: false }).limit(1).maybeSingle();
+      if (data?.data?.value !== undefined) setValue(previous => JSON.stringify(previous) === JSON.stringify(data.data.value) ? previous : data.data.value);
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisibility);
+      supabase.removeChannel(channel);
+    };
+  }, [key, user?.id]);
+
+  useEffect(() => {
+    if (!user || !scopedKey) return undefined;
+    try { localStorage.setItem(scopedKey, JSON.stringify(value)); } catch { /* storage may be unavailable */ }
+    if (!isSyncEnabled() || hydratedUserRef.current !== user.id) return undefined;
+    const timer = setTimeout(async () => {
+      const toolid = `${STATE_TOOL_PREFIX}${key}`;
+      const { data: existing } = await supabase.from('tool_history').select('id').eq('user_id', user.id).eq('toolid', toolid).limit(1).maybeSingle();
+      const row = { user_id: user.id, toolid, toolname: 'Account app data', timestamp: Date.now(), data: { value, key } };
+      if (existing?.id) await supabase.from('tool_history').update(row).eq('id', existing.id).eq('user_id', user.id);
+      else await supabase.from('tool_history').insert({ ...row, id: makeId() });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [key, scopedKey, user?.id, value]);
   return [value, setValue];
+}
+
+export function AccountRequired({ toolName, children }) {
+  const { user } = useAuth();
+  if (user) return children;
+  const openAuth = mode => window.dispatchEvent(new CustomEvent('bibabench:open-auth', { detail: { mode } }));
+  return <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-teal-200 bg-teal-50/70 p-6 text-center shadow-sm">
+    <h2 className="text-lg font-bold text-slate-800">Log eerst in om {toolName} te gebruiken</h2>
+    <p className="mt-2 text-sm leading-6 text-slate-600">Je gegevens worden dan veilig aan jouw account gekoppeld en automatisch gesynchroniseerd op je andere apparaten.</p>
+    <div className="mt-5 flex justify-center gap-2">
+      <button type="button" onClick={() => openAuth('login')} className={secondaryButton}><LogIn className="h-4 w-4" />Log in</button>
+      <button type="button" onClick={() => openAuth('signup')} className={primaryButton}><UserPlus className="h-4 w-4" />Sign up</button>
+    </div>
+  </div>;
 }
 
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

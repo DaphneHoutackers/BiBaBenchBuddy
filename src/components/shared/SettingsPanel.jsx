@@ -19,6 +19,8 @@ import {
   KeyRound,
   ArrowLeft,
   Pencil,
+  ChevronUp,
+  Info,
 } from 'lucide-react';
 import { FaKey } from "react-icons/fa6";
 import { HiTranslate } from "react-icons/hi";
@@ -29,12 +31,12 @@ import { Button } from "@/components/ui/button";
 import { supabase, isSyncEnabled, getAppUrl } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { FONT_SIZES, APP_THEMES } from '@/styles/themes';
-import pkg from '../../../package.json';
 
 const THEME_GROUPS = [
   { key: 'special', label: 'Curated' },
   { key: 'muted', label: 'Muted Tones' },
 ];
+const VISIBLE_THEME_KEYS = new Set(['default', 'monochrome', 'minimal', 'macosGlass']);
 
 const Grok = ({ className = '', size = 14 }) => (
   <span className={`inline-flex items-center justify-center rounded-full border border-current text-[9px] font-black leading-none ${className}`} style={{ width: size, height: size }}>G</span>
@@ -260,6 +262,15 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = React.useRef(null);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return undefined;
+    const close = event => { if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [accountMenuOpen]);
 
   const getInitials = (name, fallbackEmail) => {
     if (name) {
@@ -567,7 +578,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
         className="relative w-80 bg-white dark:bg-slate-900 shadow-2xl h-full overflow-y-auto flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-5 py-5 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
           <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">{t.settings}</h2>
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
             <X className="w-4 h-4" />
@@ -578,7 +589,6 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
           {[
             { id: 'appearance', label: t.appearance, icon: Palette },
             { id: 'ai', label: t.aiSettings, icon: RiRobot2Line },
-            { id: 'account', label: t.account, icon: User },
           ].map((t) => {
             const Icon = t.icon;
             return (
@@ -597,7 +607,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
           })}
         </div>
 
-        <div className="px-5 py-5 space-y-6 flex-1 overflow-y-auto">
+        <div className="px-4 py-4 space-y-5 flex-1 overflow-y-auto">
           {tab === 'appearance' && (
             <>
               <div>
@@ -606,7 +616,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                 </p>
                 <div className="space-y-4">
                   {THEME_GROUPS.map((group) => {
-                    const groupThemes = Object.entries(APP_THEMES).filter(([, t]) => t.group === group.key);
+                    const groupThemes = Object.entries(APP_THEMES).filter(([key, theme]) => theme.group === group.key && (group.key === 'muted' || VISIBLE_THEME_KEYS.has(key)));
                     const isMuted = group.key === 'muted';
                     const groupLabel = group.key === 'special' ? t.curated : t.mutedTones;
 
@@ -614,13 +624,13 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                       <div key={group.key}>
                         <p className="text-xs text-slate-400 dark:text-slate-500 mb-2 font-medium">{groupLabel}</p>
                         {isMuted ? (
-                          <div className="flex flex-wrap gap-2.5 px-1 py-1">
+                          <div className="grid grid-cols-8 gap-1.5 py-1">
                             {groupThemes.map(([key, theme]) => (
                               <button
                                 key={key}
                                 onClick={() => onChange({ ...settings, appTheme: key })}
                                 title={theme.label}
-                                className={`w-9 h-9 rounded-full border-2 transition-all p-0.5 relative group ${currentTheme === key
+                                className={`aspect-square w-full rounded-md border-2 transition-all p-0.5 relative group ${currentTheme === key
                                   ? 'border-teal-500 scale-110 shadow-sm'
                                   : 'border-white shadow-sm hover:border-slate-200 dark:border-slate-700'
                                   }`}
@@ -664,43 +674,18 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
               <div>
                 <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">
                   <ALargeSmall className="w-3.5 h-3.5" /> {t.fontSize}</p>
-                <div className="grid grid-cols-4 gap-2">
-                  {FONT_SIZES.map((f) => (
-                    <button
-                      key={f.value}
-                      onClick={() => onChange({ ...settings, fontSize: f.value })}
-                      className={`py-2 rounded-lg border text-xs font-medium transition-all ${settings.fontSize === f.value
-                        ? 'border-teal-500 bg-teal-50 text-teal-700'
-                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300'
-                        }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
+                <select value={settings.fontSize || '16px'} onChange={event => onChange({ ...settings, fontSize: event.target.value })} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  {FONT_SIZES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
               </div>
 
               <div>
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                   <HiTranslate className="w-3.5 h-3.5" /> {t.language}
                 </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: '🇬🇧 English', value: 'en' },
-                    { label: '🇳🇱 Nederlands', value: 'nl' },
-                  ].map((lang) => (
-                    <button
-                      key={lang.value}
-                      onClick={() => onChange({ ...settings, language: lang.value })}
-                      className={`py-2.5 px-3 rounded-xl border text-sm font-medium transition-all text-left ${settings.language === lang.value || (!settings.language && lang.value === 'en')
-                        ? 'border-teal-500 bg-teal-50 text-teal-700'
-                        : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300'
-                        }`}
-                    >
-                      {lang.label}
-                    </button>
-                  ))}
-                </div>
+                <select value={settings.language || 'en'} onChange={event => onChange({ ...settings, language: event.target.value })} className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <option value="en">🇬🇧 English</option><option value="nl">🇳🇱 Nederlands</option>
+                </select>
               </div>
             </>
           )}
@@ -793,7 +778,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
 
               <div className="space-y-4 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <FaKey className="w-3.5 h-3.5" /> {t.apiKeys}
+                  <FaKey className="w-3.5 h-3.5" /> {t.apiKeys}<Info className="h-3.5 w-3.5 cursor-help normal-case text-slate-400" title={t.apiKeyNote} />
                 </p>
 
                 {!authUser && (
@@ -807,10 +792,10 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                 )}
 
                 {[
-                  { prov: 'groq', key: 'groqApiKey', label: 'Groq API Key', ph: 'gsk_...', link: 'https://console.groq.com', icon: Grok },
-                  { prov: 'openai', key: 'openaiApiKey', label: 'OpenAI API Key', ph: 'sk-...', link: 'https://platform.openai.com', icon: BsOpenai },
-                  { prov: 'gemini', key: 'geminiApiKey', label: 'Gemini API Key', ph: 'AIza...', link: 'https://aistudio.google.com', icon: RiGeminiFill },
-                  { prov: 'openrouter', key: 'openrouterApiKey', label: 'OpenRouter API Key', ph: 'sk-or-...', link: 'https://openrouter.ai', icon: OpenRouter },
+                  { prov: 'groq', key: 'groqApiKey', label: 'Groq', ph: 'gsk_...', link: 'https://console.groq.com', icon: Grok },
+                  { prov: 'openai', key: 'openaiApiKey', label: 'OpenAI', ph: 'sk-...', link: 'https://platform.openai.com', icon: BsOpenai },
+                  { prov: 'gemini', key: 'geminiApiKey', label: 'Gemini', ph: 'AIza...', link: 'https://aistudio.google.com', icon: RiGeminiFill },
+                  { prov: 'openrouter', key: 'openrouterApiKey', label: 'OpenRouter', ph: 'sk-or-...', link: 'https://openrouter.ai', icon: OpenRouter },
                 ].map((item) => {
                   const ProviderIcon = item.icon;
                   return (
@@ -865,11 +850,6 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                 })}
               </div>
 
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl">
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed italic">
-                  {t.apiKeyNote}
-                </p>
-              </div>
             </div>
           )}
 
@@ -1246,9 +1226,15 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
             </div>
           )}
         </div>
-        <div className="px-5 py-4 mt-auto flex items-center justify-between text-[10px] text-slate-400 dark:text-slate-500 font-medium bg-white dark:bg-slate-900">
-          <span>BiBaBench Buddy</span>
-          <span>v{pkg.version}</span>
+        <div ref={accountMenuRef} className="relative mt-auto border-t border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-900">
+          {accountMenuOpen && <div className="absolute bottom-full left-2 right-2 mb-2 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+            {authUser ? <><button type="button" onClick={() => { setDisplayName(profile?.display_name || ''); setIsEditingProfile(true); setTab('account'); setAccountMenuOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"><Pencil className="h-3.5 w-3.5" />{t.changeDisplayName}</button><button type="button" onClick={() => { setAccountMenuOpen(false); handleSignOut(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"><LogOut className="h-3.5 w-3.5" />{t.signOut}</button></> : <><button type="button" onClick={() => { setAuthMode('login'); setTab('account'); setAccountMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-slate-100">{t.signIn}</button><button type="button" onClick={() => { setAuthMode('signup'); setTab('account'); setAccountMenuOpen(false); }} className="w-full rounded-lg px-3 py-2 text-left text-xs font-medium hover:bg-slate-100">{t.signUp}</button></>}
+          </div>}
+          <button type="button" onClick={() => setAccountMenuOpen(open => !open)} className={`flex w-full items-center gap-2.5 px-4 py-2 text-left transition ${accountMenuOpen ? 'bg-slate-100 dark:bg-slate-800' : 'hover:bg-slate-50 dark:hover:bg-slate-800/70'}`}>
+            <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">{getInitials(profile?.display_name, authUser?.email)}</span>
+            <span className="min-w-0 flex-1"><strong className="block truncate text-xs text-slate-700 dark:text-slate-200">{authUser ? (profile?.display_name || authUser.email?.split('@')[0]) : t.account}</strong><span className="block truncate text-[10px] text-slate-400">{authUser?.email || `${t.signIn} / ${t.signUp}`}</span></span>
+            <ChevronUp className={`h-4 w-4 text-slate-400 transition-transform ${accountMenuOpen ? '' : 'rotate-180'}`} />
+          </button>
         </div>
       </div>
     </div>
