@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Dna, Copy, Check, RefreshCw, Library, Save, Folder, X } from 'lucide-react';
+import { Dna, Copy, Check, RefreshCw, Library, Save, Folder, X, Search } from 'lucide-react';
+import { useHistory } from '@/context/HistoryContext';
+import { loadUserLib } from './PlasmidAnalyzer';
 
 const revComp = s => {
   if (!s) return '';
@@ -108,6 +110,7 @@ function findBinding(primer, template, expectedSide, circular = false) {
 }
 
 export default function PCRProductGenerator() {
+  const { user } = useHistory();
   const [template, setTemplate] = useState('');
   const [fwdPrimer, setFwdPrimer] = useState('');
   const [revPrimer, setRevPrimer] = useState('');
@@ -129,6 +132,63 @@ export default function PCRProductGenerator() {
   const [saveName, setSaveName] = useState('');
   const [savedToLib, setSavedToLib] = useState(false);
   const [libraryAlert, setLibraryAlert] = useState(null);
+  const [primerImportTarget, setPrimerImportTarget] = useState(null); // 'fwd' | 'rev' | null
+  const [primerSearchQuery, setPrimerSearchQuery] = useState('');
+
+  const allAvailablePrimers = useMemo(() => {
+    try {
+      const items = loadUserLib(user?.id) || [];
+      const list = [];
+      items.forEach(item => {
+        if (item.type !== 'folder' && Array.isArray(item.primers)) {
+          item.primers.forEach((p, pIdx) => {
+            const seq = String(p.seq || `${p.overhang || ''}${p.annealing || ''}`).toUpperCase().replace(/[^ATGCN]/g, '');
+            if (seq) {
+              list.push({
+                id: p.id || `${item.id}-${pIdx}`,
+                name: p.name || `Primer ${pIdx + 1}`,
+                seq,
+                overhang: p.overhang,
+                annealing: p.annealing,
+                plasmidName: item.name || 'Untitled Plasmid',
+                plasmidId: item.id,
+                length: seq.length,
+                gc: calcGCForSeq(seq)
+              });
+            }
+          });
+        }
+      });
+      return list;
+    } catch {
+      return [];
+    }
+  }, [user?.id, primerImportTarget]);
+
+  const filteredPrimers = useMemo(() => {
+    if (!primerSearchQuery.trim()) return allAvailablePrimers;
+    const q = primerSearchQuery.toLowerCase();
+    return allAvailablePrimers.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.plasmidName.toLowerCase().includes(q) ||
+      p.seq.toLowerCase().includes(q)
+    );
+  }, [allAvailablePrimers, primerSearchQuery]);
+
+  const handleSelectPrimer = (prim) => {
+    if (primerImportTarget === 'fwd') {
+      setFwdPrimer(prim.seq);
+      setFwdName(prim.name);
+      setLibraryAlert(`Imported Forward Primer: "${prim.name}"`);
+    } else if (primerImportTarget === 'rev') {
+      setRevPrimer(prim.seq);
+      setRevName(prim.name);
+      setLibraryAlert(`Imported Reverse Primer: "${prim.name}"`);
+    }
+    setTimeout(() => setLibraryAlert(null), 3000);
+    setPrimerImportTarget(null);
+    setPrimerSearchQuery('');
+  };
 
   useEffect(() => {
     const t = template.toUpperCase().replace(/[^ATGC]/g, '');
@@ -236,7 +296,7 @@ export default function PCRProductGenerator() {
 
   const handleOpenLibrary = () => {
     try {
-      const items = JSON.parse(localStorage.getItem('seq_analyzer_lib_v1') || '[]');
+      const items = loadUserLib(user?.id);
       const filesOnly = items.filter(item => item.type === 'file');
       setLibraryItems(filesOnly);
     } catch {
@@ -269,9 +329,10 @@ export default function PCRProductGenerator() {
     };
 
     try {
-      const lib = JSON.parse(localStorage.getItem('seq_analyzer_lib_v1') || '[]');
+      const key = user?.id ? `seq_analyzer_lib_v1_${user.id}` : 'seq_analyzer_lib_v1';
+      const lib = loadUserLib(user?.id);
       lib.unshift(newEntry);
-      localStorage.setItem('seq_analyzer_lib_v1', JSON.stringify(lib));
+      localStorage.setItem(key, JSON.stringify(lib));
       
       setSavedToLib(true);
       setTimeout(() => setSavedToLib(false), 2000);
@@ -378,13 +439,23 @@ export default function PCRProductGenerator() {
                       className="h-7 text-xs border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-50 max-w-[150px]"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setFwdPrimer(revComp(fwdPrimer))}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors font-medium border border-blue-100 dark:border-blue-900/30 px-2 py-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/20 self-end sm:self-auto"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Reverse
-                  </button>
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setPrimerImportTarget('fwd')}
+                      className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors font-medium border border-indigo-100 dark:border-indigo-900/30 px-2 py-0.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                      title="Import primer from Sequence Analyzer Library"
+                    >
+                      <Library className="w-3 h-3" /> Import
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFwdPrimer(revComp(fwdPrimer))}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors font-medium border border-blue-100 dark:border-blue-900/30 px-2 py-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Reverse
+                    </button>
+                  </div>
                 </div>
                 <Textarea value={fwdPrimer} onChange={e => setFwdPrimer(e.target.value)} placeholder="e.g. GGATCCatgaaagcaattttcgtactg" className="font-mono text-xs border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-50 h-16" />
               </div>
@@ -402,13 +473,23 @@ export default function PCRProductGenerator() {
                       className="h-7 text-xs border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-50 max-w-[150px]"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setRevPrimer(revComp(revPrimer))}
-                    className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors font-medium border border-blue-100 dark:border-blue-900/30 px-2 py-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/20 self-end sm:self-auto"
-                  >
-                    <RefreshCw className="w-3 h-3" /> Reverse
-                  </button>
+                  <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setPrimerImportTarget('rev')}
+                      className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300 transition-colors font-medium border border-indigo-100 dark:border-indigo-900/30 px-2 py-0.5 rounded-md hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                      title="Import primer from Sequence Analyzer Library"
+                    >
+                      <Library className="w-3 h-3" /> Import
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRevPrimer(revComp(revPrimer))}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors font-medium border border-blue-100 dark:border-blue-900/30 px-2 py-0.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/20"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Reverse
+                    </button>
+                  </div>
                 </div>
                 <Textarea value={revPrimer} onChange={e => setRevPrimer(e.target.value)} placeholder="e.g. AAGCTTttacttagcttttttgcgg" className="font-mono text-xs border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-950 dark:text-slate-50 h-16" />
               </div>
@@ -910,6 +991,111 @@ export default function PCRProductGenerator() {
                 className="px-4 py-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium shadow-sm transition-colors"
               >
                 Save Plasmid
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Import Primer from Sequence Analyzer Library */}
+      {primerImportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl max-h-[85vh] overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex items-center gap-2">
+                <Library className="w-5 h-5 text-indigo-500" />
+                <h3 className="font-semibold text-slate-800 dark:text-slate-100">
+                  Import {primerImportTarget === 'fwd' ? 'Forward' : 'Reverse'} Primer from Library
+                </h3>
+              </div>
+              <button
+                onClick={() => { setPrimerImportTarget(null); setPrimerSearchQuery(''); }}
+                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  autoFocus
+                  value={primerSearchQuery}
+                  onChange={e => setPrimerSearchQuery(e.target.value)}
+                  placeholder="Search by primer name, plasmid, or sequence…"
+                  className="pl-9 h-8 text-xs border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50"
+                />
+              </div>
+            </div>
+
+            {/* Primers List */}
+            <div className="p-4 overflow-y-auto flex-1 space-y-2.5 min-h-0">
+              {filteredPrimers.length === 0 ? (
+                <div className="text-center py-10 space-y-2">
+                  <Folder className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {allAvailablePrimers.length === 0
+                      ? 'No primers saved in your Sequence Analyzer Library.'
+                      : 'No primers match your search.'}
+                  </p>
+                  {allAvailablePrimers.length === 0 && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                      Save primers in the Sequence Analyzer tool to see them here!
+                    </p>
+                  )}
+                </div>
+              ) : (
+                filteredPrimers.map((prim, idx) => (
+                  <div
+                    key={`${prim.id}-${idx}`}
+                    className="p-3 rounded-xl border border-slate-100 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-950/30 hover:border-indigo-200 dark:hover:border-indigo-800/50 transition-all flex flex-col gap-2 group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-bold text-xs text-slate-800 dark:text-slate-100 truncate">{prim.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400 truncate max-w-[140px]" title={prim.plasmidName}>
+                          {prim.plasmidName}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleSelectPrimer(prim)}
+                        className="text-xs px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium shadow-sm transition-all flex-shrink-0"
+                      >
+                        Import as {primerImportTarget === 'fwd' ? 'Fwd' : 'Rev'}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                      <span>{prim.length} nt ({prim.gc}% GC)</span>
+                      {prim.overhang && <span className="text-red-500 dark:text-red-400 font-sans">Contains overhang ({prim.overhang.length} nt)</span>}
+                    </div>
+
+                    <div className="text-[10px] font-mono break-all text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/80 p-1.5 rounded-md">
+                      {prim.overhang ? (
+                        <>
+                          <span className="text-red-500 font-bold">{prim.overhang.toUpperCase()}</span>
+                          <span className="text-emerald-600 font-semibold dark:text-emerald-400">{(prim.annealing || prim.seq.slice(prim.overhang.length)).toUpperCase()}</span>
+                        </>
+                      ) : (
+                        prim.seq
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between text-xs text-slate-400">
+              <span>{filteredPrimers.length} primer{filteredPrimers.length === 1 ? '' : 's'} available</span>
+              <button
+                onClick={() => { setPrimerImportTarget(null); setPrimerSearchQuery(''); }}
+                className="px-3 py-1 text-xs text-slate-650 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-850 rounded-lg font-medium transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

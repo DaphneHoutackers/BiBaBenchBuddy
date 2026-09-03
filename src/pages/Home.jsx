@@ -57,6 +57,10 @@ class LazyToolErrorBoundary extends Component {
     return { error };
   }
 
+  componentDidCatch(error, errorInfo) {
+    console.error("LazyToolErrorBoundary caught error:", error, errorInfo);
+  }
+
   componentDidUpdate(prevProps) {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
       this.setState({ error: null });
@@ -72,13 +76,27 @@ class LazyToolErrorBoundary extends Component {
         <p className="mt-1 text-xs leading-relaxed opacity-80">
           Refresh the app and try again. In development this can happen when Vite refreshes optimized dependencies.
         </p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
-        >
-          Refresh
-        </button>
+        {this.state.error?.message && (
+          <p className="mt-2 text-xs font-mono text-red-600 dark:text-red-400 bg-white/70 dark:bg-black/20 p-2 rounded border border-amber-200/60 break-words">
+            {this.state.error.message}
+          </p>
+        )}
+        <div className="mt-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => this.setState({ error: null })}
+            className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-teal-700"
+          >
+            Try again
+          </button>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-700"
+          >
+            Refresh page
+          </button>
+        </div>
       </div>
     );
   }
@@ -1405,7 +1423,7 @@ export default function Home() {
 
         <main 
           onClick={() => { if (sidebarOpen) setSidebarOpen(false); }}
-          className={`flex-1 ${active === 'plasmid' ? 'px-1 sm:px-2.5 lg:px-3.5 pt-1 pb-4' : isHome ? 'px-2 sm:px-6 lg:px-8 pt-8 pb-0' : 'px-2 sm:px-6 lg:px-8 pt-2 pb-8'} overflow-y-auto overflow-x-hidden relative flex flex-col cursor-default`}
+          className={`flex-1 ${active === 'plasmid' ? 'px-1 sm:px-2.5 lg:px-3.5 pt-1 pb-1' : isHome ? 'px-2 sm:px-6 lg:px-8 pt-8 pb-0' : 'px-2 sm:px-6 lg:px-8 pt-2 pb-8'} overflow-y-auto overflow-x-hidden relative flex flex-col cursor-default`}
         >
 
           {/* ── HOME ── */}

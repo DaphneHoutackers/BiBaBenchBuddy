@@ -6,6 +6,11 @@ import electron from 'vite-plugin-electron'
 import renderer from 'vite-plugin-electron-renderer'
 import { visualizer } from 'rollup-plugin-visualizer'
 
+// Electron must run as Electron during local Vite development. Some agent and
+// CI shells set this flag globally, which otherwise turns the Electron child
+// process into plain Node before vite-plugin-electron can start the app.
+delete process.env.ELECTRON_RUN_AS_NODE
+
 export default defineConfig({
   resolve: {
     alias: {

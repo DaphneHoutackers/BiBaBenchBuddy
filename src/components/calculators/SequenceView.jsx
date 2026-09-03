@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect, useLayoutEffect } from 'react';
-import { Copy, Palette, Plus, Trash2 } from 'lucide-react';
+import { Copy, Palette, Plus } from 'lucide-react';
 import MacColorPicker from '@/components/shared/MacColorPicker';
 
 // Change sequence text font here if needed.
@@ -54,7 +54,7 @@ const packSegmentsIntoLanes = (segments) => {
   return lanes;
 };
 
-function LinearSequenceOverview({ totalLen, features, visibleRange, onNavigate }) {
+function LinearSequenceOverview({ totalLen, features, visibleRange, onNavigate, bottomOffset = 0 }) {
   const width = 1000;
   const padding = 12;
   const trackWidth = width - padding * 2;
@@ -64,7 +64,11 @@ function LinearSequenceOverview({ totalLen, features, visibleRange, onNavigate }
   const overviewFeatures = features.filter(feature => feature.visible !== false && feature.kind !== 'primer' && feature.end > feature.start);
 
   return (
-    <div className="absolute inset-x-0 bottom-0 z-30 h-14 border-t border-slate-300 bg-white px-2 py-1 shadow-[0_-4px_12px_rgba(15,23,42,0.08)]" title={`Visible sequence: ${visibleRange.start + 1}–${visibleRange.end}`}>
+    <div
+      className="absolute inset-x-0 z-30 h-14 border-t border-slate-300 bg-white px-2 py-1 shadow-[0_-4px_12px_rgba(15,23,42,0.08)]"
+      style={{ bottom: bottomOffset }}
+      title={`Visible sequence: ${visibleRange.start + 1}–${visibleRange.end}`}
+    >
       <svg
         viewBox={`0 0 ${width} 46`}
         preserveAspectRatio="none"
@@ -104,10 +108,27 @@ function LinearSequenceOverview({ totalLen, features, visibleRange, onNavigate }
   );
 }
 
-export default function SequenceView({ seq, features, sequenceColors = [], selectedMapItem = null, onDelete, onAddFeature, onColorSequence, onAnnotationClick, onPositionClick, cutSites = [], focusRange = null, basesPerRow = 60, showTranslations = false }) {
+export default function SequenceView({
+  seq,
+  features,
+  sequenceColors = [],
+  selectedMapItem = null,
+  onAddFeature,
+  onAddPrimer,
+  onColorSequence,
+  onAnnotationClick,
+  onPositionClick,
+  cutSites = [],
+  focusRange = null,
+  basesPerRow = 60,
+  showTranslations = false,
+  zoom = 1,
+  hasSearchOpen = false
+}) {
   const [selection, setSelection] = useState(null);
   const [selectionColor, setSelectionColor] = useState('#4a90d9');
   const [showColorTools, setShowColorTools] = useState(false);
+  const [selectionMenu, setSelectionMenu] = useState(null);
   const containerRef = useRef(null);
   const dragAnchorRef = useRef(null);
   const dragActiveRef = useRef(false);
@@ -127,11 +148,85 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
   const BPR = basesPerRow;
   const totalLen = seq.length;
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: Math.min(totalLen, BPR) });
+
+  const detectedOrfs = useMemo(() => {
+    if (!showTranslations || !seq || seq.length < 30) return [];
+    const orfs = [];
+    const N = seq.length;
+    const STOP_CODONS = new Set(['TAA', 'TAG', 'TGA']);
+
+    // Forward frames (+1, +2, +3)
+    for (let frame = 0; frame < 3; frame++) {
+      let orfStart = -1;
+      for (let i = frame; i + 2 < N; i += 3) {
+        const codon = seq.slice(i, i + 3).toUpperCase();
+        if (codon === 'ATG' && orfStart === -1) {
+          orfStart = i;
+        } else if (STOP_CODONS.has(codon) && orfStart !== -1) {
+          const orfEnd = i + 3;
+          if (orfEnd - orfStart >= 60) {
+            orfs.push({
+              id: `orf_fwd_${orfStart}_${orfEnd}`,
+              label: `ORF (+${frame + 1}) ${orfEnd - orfStart} bp`,
+              type: 'CDS',
+              kind: 'feature',
+              start: orfStart,
+              end: orfEnd,
+              strand: 1,
+              color: '#10b981',
+              isOrf: true,
+            });
+          }
+          orfStart = -1;
+        }
+      }
+    }
+
+    // Reverse frames (-1, -2, -3)
+    const rcSeq = revComp(seq);
+    for (let frame = 0; frame < 3; frame++) {
+      let orfStart = -1;
+      for (let i = frame; i + 2 < N; i += 3) {
+        const codon = rcSeq.slice(i, i + 3).toUpperCase();
+        if (codon === 'ATG' && orfStart === -1) {
+          orfStart = i;
+        } else if (STOP_CODONS.has(codon) && orfStart !== -1) {
+          const orfEnd = i + 3;
+          if (orfEnd - orfStart >= 60) {
+            const origStart = N - orfEnd;
+            const origEnd = N - orfStart;
+            orfs.push({
+              id: `orf_rev_${origStart}_${origEnd}`,
+              label: `ORF (-${frame + 1}) ${origEnd - origStart} bp`,
+              type: 'CDS',
+              kind: 'feature',
+              start: origStart,
+              end: origEnd,
+              strand: -1,
+              color: '#06b6d4',
+              isOrf: true,
+            });
+          }
+          orfStart = -1;
+        }
+      }
+    }
+
+    return orfs;
+  }, [seq, showTranslations]);
+
+  const allDisplayFeatures = useMemo(() => {
+    if (!showTranslations) return features;
+    const cdsKeys = new Set(features.filter(f => f.type === 'CDS' || f.type === 'gene').map(f => `${f.start}-${f.end}-${f.strand}`));
+    const extraOrfs = (detectedOrfs || []).filter(orf => !cdsKeys.has(`${orf.start}-${orf.end}-${orf.strand}`));
+    return [...features, ...extraOrfs];
+  }, [features, detectedOrfs, showTranslations]);
+
   const aminoAcidsByFeature = useMemo(() => {
     const translations = new Map();
     if (!showTranslations) return translations;
-    features.forEach(feat => {
-      if (feat.type !== 'CDS' && feat.type !== 'gene') return;
+    allDisplayFeatures.forEach(feat => {
+      if (feat.type !== 'CDS' && feat.type !== 'gene' && !feat.isOrf) return;
       const featureStart = Math.max(0, feat.start || 0);
       const featureEnd = Math.min(totalLen, feat.end || 0);
       const codingSequence = feat.strand === -1
@@ -139,20 +234,24 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
         : seq.slice(featureStart, featureEnd);
       const aminoAcids = [];
       for (let offset = 0; offset + 2 < codingSequence.length; offset += 3) {
+        const codon = codingSequence.slice(offset, offset + 3);
         const codonStart = feat.strand === -1
           ? featureEnd - offset - 3
           : featureStart + offset;
+        const aa = CODON_TABLE[codon] || '?';
         aminoAcids.push({
-          aminoAcid: CODON_TABLE[codingSequence.slice(offset, offset + 3)] || '?',
+          aminoAcid: aa,
           codonStart,
           codonEnd: codonStart + 3,
           position: codonStart + 1,
+          isStart: aa === 'M',
+          isStop: aa === '*',
         });
       }
       translations.set(feat, aminoAcids);
     });
     return translations;
-  }, [features, seq, showTranslations, totalLen]);
+  }, [allDisplayFeatures, seq, showTranslations, totalLen]);
 
   const updateVisibleRange = useCallback(() => {
     const container = containerRef.current;
@@ -260,6 +359,7 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
   };
 
   const handleBaseMouseDown = (event, abs) => {
+    if (event.button === 2) return;
     event.preventDefault();
     event.stopPropagation();
     window.getSelection()?.removeAllRanges();
@@ -317,36 +417,113 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
     return () => window.removeEventListener('mouseup', stopDragging);
   }, []);
 
+  useEffect(() => {
+    const handleCloseMenu = () => {
+      setSelectionMenu(null);
+      setShowColorTools(false);
+    };
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, []);
+
   return (
-    <div style={{ position: 'relative', height: '100%', minHeight: 0, maxHeight: 'calc(100vh - 250px)' }}>
+    <div style={{ position: 'relative', height: '100%', minHeight: 0, maxHeight: 'calc(100vh - 200px)' }}>
       <div
         ref={containerRef}
         onScroll={updateVisibleRange}
-        style={{ fontFamily: SEQUENCE_FONT_FAMILY, fontSize: 13, lineHeight: 1.5, overflow: 'auto', overscrollBehavior: 'contain', position: 'relative', height: '100%', maxHeight: 'calc(100vh - 250px)', paddingRight: 8, paddingBottom: 58, userSelect: 'none', display: 'flex', justifyContent: 'center' }}
+        onContextMenu={event => {
+          if (selection) {
+            event.preventDefault();
+            setSelectionMenu({ x: Math.min(event.clientX, window.innerWidth - 240), y: Math.min(event.clientY, window.innerHeight - 270) });
+          }
+        }}
+        style={{
+          fontFamily: SEQUENCE_FONT_FAMILY,
+          fontSize: Math.round(13 * zoom),
+          lineHeight: 1.5,
+          overflow: 'auto',
+          overscrollBehavior: 'contain',
+          position: 'relative',
+          height: '100%',
+          maxHeight: 'calc(100vh - 200px)',
+          paddingRight: 8,
+          paddingBottom: hasSearchOpen ? 96 : 60,
+          userSelect: 'none',
+          display: 'flex',
+          justifyContent: 'center'
+        }}
       >
-      {selection?.rect && (
+      {selection && selectionMenu && (
         <div
-          style={{ position: 'fixed', top: selection.rect.top - 48, left: selection.rect.left + selection.rect.width / 2, transform: 'translateX(-50%)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: 6, padding: 6, backgroundColor: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 10px 30px rgba(15,23,42,0.15)', color: '#111827' }}
-          onMouseDown={e => e.preventDefault()}
+          style={{ position: 'fixed', left: Math.max(8, selectionMenu.x), top: Math.max(8, selectionMenu.y), zIndex: 1000 }}
+          className="w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-xs text-slate-700 shadow-2xl"
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
         >
-          <button onClick={() => { navigator.clipboard.writeText(selection.text); setSelection(null); setShowColorTools(false); window.getSelection().removeAllRanges(); }} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 rounded-md transition-colors">
-            <Copy className="w-3.5 h-3.5" /> Copy
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(selection.text);
+              setSelectionMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+          >
+            <Copy className="h-3.5 w-3.5" /> Copy DNA sequence
           </button>
-          {onAddFeature && (
-            <button onClick={() => { onAddFeature(selection.start, selection.end); setSelection(null); setShowColorTools(false); window.getSelection().removeAllRanges(); }} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 rounded-md transition-colors">
-              <Plus className="w-3.5 h-3.5" /> Make feature
-            </button>
-          )}
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(Array.from({ length: Math.floor(selection.text.length / 3) }, (_, i) => CODON_TABLE[selection.text.slice(i * 3, i * 3 + 3)] || '?').join(''));
+              setSelectionMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+          >
+            <Copy className="h-3.5 w-3.5" /> Copy ORF translation
+          </button>
+          <button
+            onClick={() => {
+              onAddFeature?.(selection.start, selection.end);
+              setSelectionMenu(null);
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add feature
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            onClick={() => {
+              onAddPrimer?.(selection.start, selection.end, 1);
+              setSelectionMenu(null);
+            }}
+            className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+          >
+            Add primer — top strand (→)
+          </button>
+          <button
+            onClick={() => {
+              onAddPrimer?.(selection.start, selection.end, -1);
+              setSelectionMenu(null);
+            }}
+            className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+          >
+            Add primer — bottom strand (←)
+          </button>
           {onColorSequence && (
             <div className="relative">
-              <button onClick={() => setShowColorTools(v => !v)} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-100 rounded-md transition-colors">
-                <Palette className="w-3.5 h-3.5" /> Change DNA color
+              <button
+                onClick={() => setShowColorTools(v => !v)}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-100"
+              >
+                <Palette className="h-3.5 w-3.5" /> Change DNA color
               </button>
               {showColorTools && (
-                <div className="absolute left-0 top-full mt-2 w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
+                <div className="absolute right-full bottom-0 mr-2 w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
                   <div className="mb-2 grid grid-cols-6 gap-1.5">
                     {DNA_COLOR_PRESETS.map(color => (
-                      <button key={color} onClick={() => setSelectionColor(color)} className={`h-6 w-6 rounded-full border ${selectionColor === color ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-slate-200'}`} style={{ backgroundColor: color }} />
+                      <button
+                        key={color}
+                        onClick={() => setSelectionColor(color)}
+                        className={`h-6 w-6 rounded-full border ${selectionColor === color ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-slate-200'}`}
+                        style={{ backgroundColor: color }}
+                      />
                     ))}
                   </div>
                   <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-medium text-slate-600">
@@ -354,18 +531,13 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
                     <MacColorPicker value={selectionColor} onChange={setSelectionColor} swatchClassName="h-5 w-7 rounded" buttonClassName="rounded border border-slate-200 bg-white p-0.5" />
                   </div>
                   <div className="grid grid-cols-3 gap-1.5">
-                    <button onClick={() => applySequenceColor(1)} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Top</button>
-                    <button onClick={() => applySequenceColor(-1)} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Bottom</button>
-                    <button onClick={() => applySequenceColor(0)} className="rounded-md bg-teal-50 px-2 py-1.5 text-[11px] font-medium text-teal-700 hover:bg-teal-100">Both</button>
+                    <button onClick={() => { applySequenceColor(1); setSelectionMenu(null); }} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Top</button>
+                    <button onClick={() => { applySequenceColor(-1); setSelectionMenu(null); }} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Bottom</button>
+                    <button onClick={() => { applySequenceColor(0); setSelectionMenu(null); }} className="rounded-md bg-teal-50 px-2 py-1.5 text-[11px] font-medium text-teal-700 hover:bg-teal-100">Both</button>
                   </div>
                 </div>
               )}
             </div>
-          )}
-          {onDelete && (
-            <button onClick={() => { onDelete(selection.start, selection.end); setSelection(null); setShowColorTools(false); window.getSelection().removeAllRanges(); }} className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 rounded-md transition-colors">
-              <Trash2 className="w-3.5 h-3.5" /> Delete
-            </button>
           )}
         </div>
       )}
@@ -375,7 +547,7 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
         const rowEnd = Math.min(rowStart + BPR, totalLen);
         const fwd = seq.slice(rowStart, rowEnd);
         const rev = rc.slice(totalLen - rowEnd, totalLen - rowStart);
-        const rowFeats = features.filter(f => f.visible !== false && f.start < rowEnd && f.end > rowStart);
+        const rowFeats = allDisplayFeatures.filter(f => f.visible !== false && f.start < rowEnd && f.end > rowStart);
         const rowCuts = cutSites.filter(cs => cs.pos >= rowStart && cs.pos < rowEnd);
         const rowLength = rowEnd - rowStart;
         const annotationSegments = rowFeats.map((feat, index) => {
@@ -456,7 +628,7 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
 
             <div style={{ whiteSpace: 'pre' }}>
               <span style={{ color: '#94a3b8', width: '5ch', display: 'inline-block', userSelect: 'none' }}>{"5'  "}</span>
-              <span className="fwd-seq" data-start={rowStart} style={{ color: '#1e293b', cursor: 'text' }}>
+              <span className="fwd-seq" data-start={rowStart} style={{ color: '#1e293b', cursor: 'text' }} onContextMenu={event => { if (selection) { event.preventDefault(); setSelectionMenu({ x: Math.min(event.clientX, window.innerWidth - 230), y: Math.min(event.clientY, window.innerHeight - 260) }); } }}>
                 {Array.from(fwd).map((base, idx) => {
                   const abs = rowStart + idx;
                   const addSpace = idx > 0 && idx % 10 === 0;
@@ -591,9 +763,10 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
                                       justifyContent: 'center',
                                       boxSizing: 'border-box',
                                       borderRight: '1px solid rgba(255,255,255,0.65)',
-                                      backgroundColor: aminoAcid === '*' ? '#ef4444' : '#fedb91',
-                                      color: aminoAcid === '*' ? '#ffffff' : '#111827',
-                                      fontWeight: aminoAcid === '*' ? 800 : 600,
+                                      backgroundColor: aminoAcid === '*' ? '#ef4444' : aminoAcid === 'M' ? '#059669' : '#fedb91',
+                                      color: aminoAcid === '*' || aminoAcid === 'M' ? '#ffffff' : '#111827',
+                                      fontWeight: aminoAcid === '*' || aminoAcid === 'M' ? 800 : 600,
+                                      borderRadius: aminoAcid === '*' ? 2 : 0,
                                       cursor: 'pointer',
                                     }}
                                   >
@@ -648,7 +821,7 @@ export default function SequenceView({ seq, features, sequenceColors = [], selec
       })}
       </div>
       </div>
-      <LinearSequenceOverview totalLen={totalLen} features={features} visibleRange={visibleRange} onNavigate={navigateToOverviewPosition} />
+      <LinearSequenceOverview totalLen={totalLen} features={features} visibleRange={visibleRange} onNavigate={navigateToOverviewPosition} bottomOffset={hasSearchOpen ? 32 : 0} />
     </div>
   );
 }
