@@ -376,3 +376,15 @@ body.macos26-theme a:focus-visible {
   opacity: 0.8;
   text-decoration-thickness: 2px;
 }
+
+/* Keep Sequence Analyzer tables readable within a phone viewport. */
+@media (max-width: 767px) {
+  .sequence-analyzer { font-size: 11px; }
+  .sequence-analyzer table { font-size: 10px; }
+  .sequence-analyzer th, .sequence-analyzer td { padding: 3px 2px; overflow-wrap: anywhere; }
+  .sequence-analyzer table .text-xs, .sequence-analyzer table .text-sm { font-size: 10px; }
+  .sequence-analyzer table button, .sequence-analyzer table input, .sequence-analyzer table select { padding: 2px; font-size: 10px; }
+  .sequence-analyzer table svg { max-width: 12px; max-height: 12px; flex-shrink: 0; }
+  .sequence-analyzer h2 { font-size: 16px; }
+  .sequence-analyzer > div > div > p { font-size: 11px; }
+}

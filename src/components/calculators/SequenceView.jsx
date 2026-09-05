@@ -136,6 +136,7 @@ export default function SequenceView({
 
   useEffect(() => {
     const handleCopy = (e) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target?.isContentEditable) return;
       if (selection?.text) {
         e.preventDefault();
         e.clipboardData.setData('text/plain', selection.text);
@@ -296,7 +297,6 @@ export default function SequenceView({
     containerRef.current.scrollTop = Math.max(0, row.offsetTop - (containerRef.current.clientHeight / 2) + (row.offsetHeight / 2));
   }, [focusRange, totalLen]);
 
-  if (!totalLen) return null;
 
   const rc = revComp(seq);
   const rows = [];
@@ -426,6 +426,8 @@ export default function SequenceView({
     return () => window.removeEventListener('click', handleCloseMenu);
   }, []);
 
+  if (!totalLen) return null;
+
   return (
     <div style={{ position: 'relative', height: '100%', minHeight: 0, maxHeight: 'calc(100vh - 200px)' }}>
       <div
@@ -453,10 +455,10 @@ export default function SequenceView({
           justifyContent: 'center'
         }}
       >
-      {selection && selectionMenu && (
+      {selection && (
         <div
-          style={{ position: 'fixed', left: Math.max(8, selectionMenu.x), top: Math.max(8, selectionMenu.y), zIndex: 1000 }}
-          className="w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-xs text-slate-700 shadow-2xl"
+          style={{ fontFamily: 'ui-sans-serif, system-ui, sans-serif', position: 'fixed', left: Math.max(8, Math.min(window.innerWidth - 232, selectionMenu?.x ?? selection.rect.left)), top: Math.max(8, (selectionMenu?.y ?? Math.min(selection.rect.top + 28, window.innerHeight - 280))), zIndex: 1000 }}
+          className="font-sans w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-xs text-slate-700 shadow-2xl"
           onMouseDown={e => e.stopPropagation()}
           onClick={e => e.stopPropagation()}
         >

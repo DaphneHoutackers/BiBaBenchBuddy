@@ -54,7 +54,7 @@ const FEATURE_TYPES = [
   'misc_feature', 'misc_recomb', 'misc_RNA', 'CDS', 'gene', 'protein_bind', 'primer_bind',
   'promoter', 'rep_origin', 'polyA_signal', 'sig_peptide', 'terminator', 'regulatory',
   'enhancer', 'operator', 'origin', 'source', 'mRNA', 'rRNA', 'tRNA', 'ncRNA', 'exon',
-  'intron', '5UTR', '3UTR', 'repeat_region', 'mobile_element'
+  'intron', '5UTR', '3UTR', 'repeat_region', 'mobile_element', 'Mutation'
 ];
 const _SEQUENCE_CLASSES = [
   'PRI - primate', 'ROD - rodent', 'MAM - other mammalian', 'VRT - other vertebrate',
@@ -96,6 +96,7 @@ const ENZYME_CUT_FILTERS = [
 ];
 const LIBRARY_OVERVIEW_COLUMNS = [
   { id: 'name', label: 'Name', defaultVisible: true, width: 260 },
+  { id: 'mutations', label: 'Mutations', defaultVisible: true, width: 80 },
   { id: 'tags', label: 'Labels', defaultVisible: true, width: 170 },
   { id: 'resistance', label: 'Resistance', defaultVisible: true, width: 120 },
   { id: 'codeNumber', label: 'Code Number', defaultVisible: true, width: 116 },
@@ -779,7 +780,6 @@ function CircularMap({
   name,
   isCircular,
 }) {
-  const isMobile = useIsMobile();
   const totalLen = seq.length;
   if (!totalLen) return null;
   const cx = 350, cy = 300, R = 190;
@@ -912,15 +912,16 @@ function CircularMap({
   return (
     <svg
       viewBox="-160 -120 1020 840"
-      style={{ width: '100%', height: '100%', minHeight: isMobile ? '100%' : 560 }}
+      style={{ width: '100%', height: '100%', minHeight: 0 }}
       onClick={(e) => {
-        if (e.target.tagName === 'svg' || e.target.id === 'plasmid-backbone') {
-          onMapPositionClick?.(posFromSvgEvent(e));
+        if (e.target.tagName === 'svg' || e.target.closest('[data-backbone]')) {
+          onMapPositionClick?.(e, posFromSvgEvent(e));
         }
       }}
     >
-      <circle id="plasmid-backbone" cx={cx} cy={cy} r={R} fill="none" stroke="#2f3437" strokeWidth="3.2" />
-      <circle cx={cx} cy={cy} r={R + 5} fill="none" stroke="#2f3437" strokeWidth="3.2" />
+      <circle data-backbone="true" cx={cx} cy={cy} r={R + 2.5} fill="none" stroke="transparent" strokeWidth="22" style={{ cursor: 'crosshair' }} />
+      <circle data-backbone="true" id="plasmid-backbone" cx={cx} cy={cy} r={R} fill="none" stroke="#2f3437" strokeWidth="3.2" />
+      <circle data-backbone="true" cx={cx} cy={cy} r={R + 5} fill="none" stroke="#2f3437" strokeWidth="3.2" />
       {sequenceColors.map((colorRegion, index) => (
         <path
           key={`seq-color-${colorRegion.start}-${colorRegion.end}-${index}`}
@@ -948,8 +949,12 @@ function CircularMap({
         );
       })}
       {selectedRange && selectedRange.start !== selectedRange.end && (
-        <path d={arcLinePath(selectedRange.start, selectedRange.end, R + 12)} fill="none" stroke={rangeColor || '#0ea5e9'} strokeWidth="7" strokeLinecap="round" opacity="0.95" />
+        <path data-selection-arc="true" d={arcLinePath(selectedRange.start, selectedRange.end, R + 2)} fill="none" stroke="#60a5fa" strokeWidth="26" opacity="0.3" pointerEvents="none" />
       )}
+      {(selectedRange ? [selectedRange.start, selectedRange.end] : selectedMapItem?.kind === 'position' ? [selectedMapItem.pos] : []).map((pos, index) => {
+        const inner = point(R - 22, ang(pos)), outer = point(R + 22, ang(pos));
+        return <line data-selection-boundary="true" key={index} x1={inner.x} y1={inner.y} x2={outer.x} y2={outer.y} stroke="#60a5fa" strokeWidth="2" pointerEvents="none" />;
+      })}
       {features.map((feat, index) => {
         if (feat.visible === false) return null;
         if (feat.kind === 'primer') {
@@ -1101,7 +1106,7 @@ function CircularMap({
 }
 
 // ── Linear Map ────────────────────────────────────────────────────────────────
-function LinearMap({ seq, features, cutSites, selectedMapItem, selectedRange, rangeColor, onLabelClick, onLabelHover, onLabelLeave, onLabelContextMenu, onEnzymeClick, onEnzymeHover, onEnzymeLeave, onEnzymeContextMenu, name }) {
+function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapItem, selectedRange, rangeColor, onLabelClick, onLabelHover, onLabelLeave, onLabelContextMenu, onEnzymeClick, onEnzymeHover, onEnzymeLeave, onEnzymeContextMenu, name }) {
   const totalLen = seq.length; if (!totalLen) return null;
   const W = 820, H = 240, trackY = 110, FW = 18, ml = 40, mr = 780, mw = 740;
   const xOf = pos => ml + (pos / totalLen) * mw;
@@ -1126,7 +1131,14 @@ function LinearMap({ seq, features, cutSites, selectedMapItem, selectedRange, ra
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
-      <line x1={ml} y1={trackY} x2={mr} y2={trackY} stroke="#2f3437" strokeWidth="3" />
+      <line x1={ml} y1={trackY} x2={mr} y2={trackY} stroke="transparent" strokeWidth="22" style={{ cursor: 'crosshair' }} onClick={event => {
+        const svg = event.currentTarget.ownerSVGElement;
+        const point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
+        const local = point.matrixTransform(svg.getScreenCTM().inverse());
+        onMapPositionClick?.(event, Math.max(0, Math.min(totalLen - 1, Math.round((local.x - ml) / mw * totalLen))));
+      }} />
+      <line x1={ml} y1={trackY} x2={mr} y2={trackY} stroke="#2f3437" strokeWidth="3" pointerEvents="none" />
+      {(selectedRange ? [selectedRange.start, selectedRange.end] : selectedMapItem?.kind === 'position' ? [selectedMapItem.pos] : []).map((pos, index) => <line key={index} x1={xOf(pos)} y1={trackY - 24} x2={xOf(pos)} y2={trackY + 24} stroke="#60a5fa" strokeWidth="2" pointerEvents="none" />)}
       {selectedRange && selectedRange.end > selectedRange.start && <line x1={xOf(selectedRange.start)} y1={trackY - 22} x2={xOf(selectedRange.end)} y2={trackY - 22} stroke={rangeColor || '#0ea5e9'} strokeWidth="7" strokeLinecap="round" />}
       {[0, 0.25, 0.5, 0.75, 1].map(frac => {
         const x = xOf(frac * totalLen), pos = Math.round(frac * totalLen);
@@ -1188,8 +1200,13 @@ const newEmptyTab = (name = '') => ({
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
-  const { history, user, isRemoteLoading, addHistoryItem } = useHistory();
+  const { history, user, isRemoteLoading, addHistoryItem, saveHistoryItems, syncError } = useHistory();
   const isMobile = useIsMobile();
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+  const [mapLayout, setMapLayout] = useState('circular');
+  const [splitView, setSplitView] = useState(false);
+  const [mutationsExpanded, setMutationsExpanded] = useState(true);
   const [toolTab, setToolTab] = useState('analyzer');
   const [phase, setPhase] = useState('input');
 
@@ -1506,7 +1523,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       saveUserLib(user?.id, next);
       return next;
     });
-  }, [features, primers, sequenceColors, selectedEnzymes, isCircular, seqName, activeEntryId, phase, user?.id]);
+  }, [sequence, features, primers, sequenceColors, selectedEnzymes, isCircular, seqName, activeEntryId, phase, user?.id]);
   const [showAddFeature, setShowAddFeature] = useState(false);
   const [addFeatureSurface, setAddFeatureSurface] = useState('side');
   const [showFeatureImport, setShowFeatureImport] = useState(false);
@@ -1520,6 +1537,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const [newPrimerName, setNewPrimerName] = useState('');
   const [newPrimerRaw, setNewPrimerRaw] = useState('');
   const [newPrimerColor, setNewPrimerColor] = useState(PRIMER_COLORS[0]);
+  const [expandedFeatureIdx, setExpandedFeatureIdx] = useState(null);
   const [expandedPrimerId, setExpandedPrimerId] = useState(null);
   const [popupData, setPopupData] = useState(null);
   const [popupLabelEditing, setPopupLabelEditing] = useState(false);
@@ -1558,15 +1576,31 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   useEffect(() => {
     if (!user) return;
     if (isRemoteLoading) return;
-    // Hydrate once per account. Re-applying an older remote snapshot while a
-    // new import is waiting for its debounce would otherwise delete the import.
-    if (libraryHydratedRef.current) return;
+    // Do not replace edits that have not yet entered the durable history queue.
+    if (libraryHydratedRef.current && JSON.stringify(library) !== lastSavedLibraryJsonRef.current) return;
+    if (libraryHydratedRef.current && !librarySnapshot?.synced) return;
 
     const remoteLibrary = Array.isArray(librarySnapshot?.data?.library)
       ? librarySnapshot.data.library
       : null;
     const nextLibrary = remoteLibrary || loadUserLib(user.id);
 
+    if (libraryHydratedRef.current && JSON.stringify(nextLibrary) === lastSavedLibraryJsonRef.current) return;
+    const active = nextLibrary.find(entry => entry.id === activeEntryId);
+    if (active) {
+      setSequence(active.sequence || '');
+      setRawInput(active.sequence || '');
+      setSeqName(active.name || '');
+      setFeatures(active.features || []);
+      setPrimers(active.primers || []);
+      setSequenceColors(active.sequenceColors || []);
+      setSelectedEnzymes(active.selectedEnzymes || {});
+      setIsCircular(active.isCircular ?? true);
+    }
+    setOpenTabs(tabs => tabs.map(tab => {
+      const entry = nextLibrary.find(item => item.id === tab.activeEntryId);
+      return entry ? { ...tab, ...entry, id: tab.id, seqName: entry.name, rawInput: entry.sequence } : tab;
+    }));
     setLibrary(nextLibrary);
     saveUserLib(user.id, nextLibrary);
     lastSavedLibraryJsonRef.current = JSON.stringify(nextLibrary);
@@ -1583,12 +1617,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const libraryJson = JSON.stringify(library);
     if (libraryJson === lastSavedLibraryJsonRef.current) return;
 
-    lastSavedLibraryJsonRef.current = libraryJson;
     saveUserLib(user?.id, library);
 
     if (!user) return;
 
-    const debounce = setTimeout(() => {
+    lastSavedLibraryJsonRef.current = libraryJson;
+    {
       addHistoryItem({
         id: getLibraryHistoryId(user.id),
         toolId: LIB_HISTORY_TOOL_ID,
@@ -1600,9 +1634,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
           savedAt: new Date().toISOString(),
         },
       });
-    }, 800);
-
-    return () => clearTimeout(debounce);
+    }
   }, [library, user, isRemoteLoading, addHistoryItem]);
 
   // Handle click outside for popups and rename input
@@ -1644,7 +1676,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const handleMove = (event) => {
       const resize = libraryColumnResizeRef.current;
       if (resize) {
-        const nextWidth = Math.max(resize.columnId === 'confirmed' ? 38 : 54, resize.startWidth + event.clientX - resize.startX);
+        const nextWidth = Math.max(32, resize.startWidth + event.clientX - resize.startX);
         setLibraryColumnWidths(prev => ({ ...prev, [resize.columnId]: nextWidth }));
       }
       const overviewResize = overviewColumnResizeRef.current;
@@ -1958,7 +1990,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   }, [features, primers, seq, mapLayerVisibility.features, mapLayerVisibility.primers]);
 
   const libraryFeatureOptions = useMemo(() => {
-    const currentKeys = new Set(features.map(f => `${String(f.label || '').toLowerCase()}|${f.start}|${f.end}|${f.type || ''}`));
+    const currentKeys = new Set(features.map(f => `${String(f.label || '').toLowerCase()}|${f.start}|${f.end}`));
     return library
       .filter(entry => entry.type !== 'folder' && entry.id !== activeEntryId)
       .flatMap(entry => (entry.features || []).flatMap((feature, index) => {
@@ -1981,7 +2013,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
           };
         });
       }))
-      .filter(({ feature }) => !currentKeys.has(`${String(feature.label || '').toLowerCase()}|${feature.start}|${feature.end}|${feature.type || ''}`))
+      .filter(({ feature }) => { const key = `${String(feature.label || '').trim().toLowerCase()}|${feature.start}|${feature.end}`; if (currentKeys.has(key)) return false; currentKeys.add(key); return true; })
       .slice(0, 80);
   }, [library, features, activeEntryId, seq]);
 
@@ -2711,11 +2743,11 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     setShowFeatureImport(false);
     setNewFeature(prev => ({ ...prev, label: '' }));
     setShowAddFeature(true);
-    if (surface === 'side') setActivePanel('features');
+    if (surface === 'side') { setActivePanel('features'); setRightPanelCollapsed(false); }
   };
   const importFeatureFromLibrary = (feature) => {
     if (!feature) return;
-    setFeatures(prev => [...prev, { ...feature, id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, visible: feature.visible ?? true }]);
+    setFeatures(prev => prev.some(item => String(item.label || '').trim().toLowerCase() === String(feature.label || '').trim().toLowerCase() && item.start === feature.start && item.end === feature.end) ? prev : [...prev, { ...feature, id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, visible: feature.visible ?? true }]);
   };
   const updateFeature = (idx, updates) => setFeatures(prev => prev.map((f, i) => i === idx ? { ...f, ...updates } : f));
   const updateFeatureSequence = (idx, rawValue) => {
@@ -3513,10 +3545,10 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const fullSeq = String(p.seq || `${p.overhang || ''}${p.annealing || ''}`).toUpperCase().replace(/[^ATGCN]/g, '');
     const sequenceRows = sites.length ? sites : [null];
     return (
-      <div className="space-y-3" onClick={e => e.stopPropagation()}>
-        <ColoredPrimerSequence primer={p} onChange={value => updatePrimerSequence(idx, value)} className="min-h-9" />
+      <div className="space-y-1" onClick={e => e.stopPropagation()}>
+        <ColoredPrimerSequence primer={p} onChange={value => updatePrimerSequence(idx, value)} className="min-h-6" />
         
-        <div className="space-y-2 pt-1 border-t border-slate-100">
+        <div className="space-y-1 pt-1 border-t border-slate-100">
           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
             Detected Annealing Sites ({sites.length})
           </div>
@@ -3528,35 +3560,13 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             return (
               <div
                 key={site ? `${site.start}-${site.end}-${site.strand}-${siteIdx}` : 'no-site'}
-                className={`rounded-lg border p-2 text-xs space-y-1.5 ${isOffTarget ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50/60'}`}
+                className={`rounded-lg border p-1 text-[10px] space-y-1 ${isOffTarget ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-slate-50/60'}`}
               >
-                <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] font-semibold text-slate-600">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className={`rounded px-1.5 py-0.5 font-mono shadow-sm border ${isOffTarget ? 'border-amber-300 bg-amber-100 text-amber-800' : 'border-slate-200 bg-white text-slate-700'}`}>
-                      {site ? `${site.start + 1}..${site.end} bp` : 'No binding site found'}
-                    </span>
-                    {site && (
-                      <span className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 shadow-sm">
-                        {site.strand === 1 ? '→ Top (sense)' : '← Bottom (antisense)'}
-                      </span>
-                    )}
-                    {isOffTarget && (
-                      <span className="rounded bg-amber-200 px-1.5 py-0.5 text-[9px] font-bold text-amber-900 uppercase tracking-wide">
-                        Off-target #{siteIdx + 1}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-shrink-0 items-center gap-1.5 text-slate-500 font-mono">
-                    <span title="GC% van de annealing regio">{gcPercent}% GC</span>
-                    <span className="text-slate-300">•</span>
-                    <span title="Annealing Tm">{site?.tm || primerTm(annealingSeq)}℃ Tm</span>
-                    {p.overhang && (
-                      <>
-                        <span className="text-slate-300">|</span>
-                        <span title="Tm inclusief overhang">{primerTm(fullSeq)}℃ Full</span>
-                      </>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between gap-1 whitespace-nowrap font-mono text-[10px] text-slate-600">
+                  <span title={isOffTarget ? `Off-target #${siteIdx + 1}` : 'Binding location'}>{site ? `${site.start + 1}..${site.end} bp` : 'No binding'}</span>
+                  <span title="Direction">{(site?.strand || effectivePrimerStrand(p, sites)) === 1 ? '→' : '←'}</span>
+                  <span title={`Annealing Tm; full primer ${primerTm(fullSeq)}℃`}>{site?.tm || primerTm(annealingSeq)}℃ Tm</span>
+                  <span title="GC% of annealing region">{gcPercent}% GC</span>
                 </div>
 
                 <div className="flex items-center gap-1.5 pt-0.5">
@@ -3592,7 +3602,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   };
 
   const resizeHeaderProps = (columnId, width = 100) => ({
-    style: { width: overviewTableColumnWidths[columnId] || width },
+    style: { width: isMobile ? undefined : overviewTableColumnWidths[columnId] || width },
   });
 
   const renderOverviewResizeHandle = () => (
@@ -3700,6 +3710,52 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     URL.revokeObjectURL(a.href);
   };
 
+  const saveCurrentSequence = async () => {
+    if (saving) return;
+    setSaving(true);
+    setSaveMessage('');
+    const currentEntry = { sequence, features, primers, sequenceColors, selectedEnzymes, isCircular, name: seqName, dateEdited: new Date().toISOString() };
+    const snapshot = library.map(entry => entry.id === activeEntryId ? { ...entry, ...currentEntry } : entry);
+    const items = [{ id: sessionId.current, toolId: 'plasmid', toolName: 'Sequence Analyzer', data: {
+      preview: `Plasmid: ${seqName || 'Unnamed'} (${sequence.length} bp)`, phase, seqName, rawInput, sequence, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activePanel,
+    } }];
+    if (user) items.push({ id: getLibraryHistoryId(user.id), toolId: LIB_HISTORY_TOOL_ID, toolName: 'Sequence Analyzer Library', data: { hidden: true, library: snapshot, savedAt: new Date().toISOString() } });
+    try { await saveHistoryItems(items); setSaveMessage('Saved to account'); }
+    catch (error) { setSaveMessage(error.message || 'Save failed — try again'); }
+    finally { setSaving(false); }
+  };
+
+  const copyMapImage = () => {
+    const svg = mapRef.current?.querySelector('.plasmid-map-container svg');
+    if (!svg || !navigator.clipboard?.write || !window.ClipboardItem) {
+      window.alert('Open the map in a browser that supports copying PNG images.');
+      return;
+    }
+    const png = new Promise((resolve, reject) => {
+      const bounds = svg.viewBox.baseVal;
+      const canvas = document.createElement('canvas');
+      canvas.width = (bounds.width || 1000) * 2;
+      canvas.height = (bounds.height || 800) * 2;
+      const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new window.Image();
+      img.onload = () => {
+        try {
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('PNG generation failed')), 'image/png');
+        } catch (error) { reject(error); }
+        finally { URL.revokeObjectURL(url); }
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Map could not be rendered')); };
+      img.src = url;
+    });
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+      .then(() => setShowExportMenu(false))
+      .catch(error => window.alert(`Copy map image failed: ${error.message}`));
+  };
+
   const exportPNG = async () => {
     if (!mapRef.current) return;
     const svgEl = mapRef.current.querySelector('.plasmid-map-container svg');
@@ -3770,7 +3826,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       // 4. Load SVG into Image object via Blob URL
       const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
-      const img = new Image();
+      const img = new window.Image();
 
       img.onload = () => {
         try {
@@ -3894,6 +3950,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const metadata = { ...defaultPlasmidMetadata(), ...(entry.metadata || {}) };
     if (columnId === 'name') return entry.name || '';
     if (entry.type === 'folder') return '';
+    if (columnId === 'mutations') return (entry.features || []).filter(feature => String(feature.type).toLowerCase() === 'mutation').length;
     if (columnId === 'tags') return metadata.tags || [];
     if (columnId === 'confirmed') return Boolean(metadata.confirmedExperimentally);
     if (columnId === 'sequenced') return Boolean(metadata.sequenced);
@@ -4080,19 +4137,17 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             </div>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
-            <table className="w-full text-xs" style={{ minWidth: totalWidth }}>
+            <table className="table-fixed text-xs" style={{ width: totalWidth }}>
               <colgroup>
-                {visibleLibraryOverviewColumns.map((column, idx) => {
+                {visibleLibraryOverviewColumns.map((column) => {
                   const explicitWidth = libraryColumnWidths[column.id];
                   const colWidth = explicitWidth || computedDefaultColumnWidths[column.id] || column.width;
-                  const isDescription = column.id === 'description';
-                  const isLast = idx === visibleLibraryOverviewColumns.length - 1;
+
                   return (
                     <col
                       key={column.id}
                       style={{
-                        width: !explicitWidth && (isDescription || isLast) ? 'auto' : colWidth,
-                        minWidth: colWidth,
+                        width: colWidth,
                       }}
                     />
                   );
@@ -4103,13 +4158,13 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   {visibleLibraryOverviewColumns.map(column => {
                     const Icon = column.icon;
                     return (
-                      <th key={column.id} className="relative select-none border-r border-slate-100 px-2 py-2 text-left font-semibold text-slate-500 last:border-r-0">
+                      <th key={column.id} className="relative min-w-0 select-none border-r border-slate-100 px-2 py-2 text-left font-semibold text-slate-500 last:border-r-0">
                         <button
                           onClick={() => setLibrarySort(prev => ({ key: column.id, direction: prev.key === column.id && prev.direction === 'asc' ? 'desc' : 'asc' }))}
                           className="flex w-full items-center gap-1 truncate text-left hover:text-teal-700"
                           title={`Sort by ${column.label}`}
                         >
-                          {Icon ? <Icon className="h-4 w-4 flex-shrink-0" /> : <span className="truncate">{column.label}</span>}
+                          {Icon ? <Icon className="h-4 w-4 flex-shrink-0" /> : <span className="min-w-0 truncate">{column.label}</span>}
                           {librarySort.key === column.id && <span className="ml-auto text-[10px]">{librarySort.direction === 'asc' ? '↑' : '↓'}</span>}
                         </button>
                         {!column.fixed && (
@@ -4118,7 +4173,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             onMouseDown={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              libraryColumnResizeRef.current = { columnId: column.id, startX: e.clientX, startWidth: libraryColumnWidths[column.id] || column.width };
+                              libraryColumnResizeRef.current = { columnId: column.id, startX: e.clientX, startWidth: e.currentTarget.parentElement.getBoundingClientRect().width };
                             }}
                           />
                         )}
@@ -4239,7 +4294,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
 
 
   return (
-    <div className="space-y-4 relative" onClick={handleMapClick}>
+    <div className="sequence-analyzer space-y-4 relative" onClick={handleMapClick}>
       {libraryContextMenu && (() => {
         const item = library.find(i => i.id === libraryContextMenu.itemId);
         if (!item) return null;
@@ -4831,6 +4886,8 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
           </div>
         </div>
         {toolTab === 'analyzer' && phase === 'map' && seq && (
+          <div className="flex items-center gap-1"><button onClick={saveCurrentSequence} disabled={saving} className="rounded-md border border-slate-200 px-2 py-1 text-xs disabled:opacity-40" title="Save current edits to account and history">{saving ? 'Saving…' : 'Save'}</button>
+          <span className="text-[10px] text-slate-500" role="status">{saveMessage || syncError || (saving ? 'Saving…' : history.some(item => !item.synced && (item.id === sessionId.current || item.id === getLibraryHistoryId(user?.id))) ? 'Changes pending' : 'Saved')}</span>
           <div className="relative" ref={exportMenuRef}>
             <Button
               variant="outline"
@@ -4848,6 +4905,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 onClick={() => setShowExportMenu(false)}
               >
                 <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Export Image</div>
+                <button onClick={copyMapImage} className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-slate-50">Copy map image (PNG)</button>
                 <button
                   type="button"
                   onClick={exportPNG}
@@ -4896,7 +4954,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 </button>
               </div>
             )}
-          </div>
+          </div></div>
         )}
       </div>
 
@@ -4980,17 +5038,17 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
               }`}
               style={{ 
                 position: isMobile && !leftPanelCollapsed ? 'absolute' : 'relative',
-                width: leftPanelCollapsed ? 42 : isMobile ? 'min(calc(100% - 42px), 280px)' : leftWidth
+                width: leftPanelCollapsed ? (isMobile ? 0 : 42) : isMobile ? 'min(calc(100% - 42px), 280px)' : leftWidth
               }}
             >
-              {leftPanelCollapsed ? (
+              {leftPanelCollapsed ? (isMobile ? <button title="Open library" onClick={() => setLeftPanelCollapsed(false)} className="absolute left-1 top-1 z-40 rounded border bg-white p-1"><ChevronRight className="h-4 w-4" /></button> : (
                 <div className="flex flex-col items-center gap-2">
                   <div className="flex h-[53px] w-full items-center justify-center border-b border-slate-200 bg-white">
                     <button onClick={() => setLeftPanelCollapsed(false)} className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-teal-700" title="Open library"><ChevronRight className="w-4 h-4" /></button>
                   </div>
                   <button onClick={() => startNewSequence(null)} className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100" title="New Sequence"><FiFilePlus className="w-4 h-4" /></button>
                 </div>
-              ) : (
+              )) : (
               <>
               {/* Library Button */}
               <div className="flex h-[53px] items-center border-b bg-white px-2">
@@ -5250,6 +5308,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   </button>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
+                  <button title="Circular map view" aria-pressed={mapLayout === 'circular'} onClick={() => { setMapLayout('circular'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'circular' ? 'bg-white text-slate-800' : 'text-slate-500'}`}><BiDoughnutChart className="h-4 w-4" /></button>
+                  <button title="Linear map view" aria-pressed={mapLayout === 'linear'} onClick={() => { setMapLayout('linear'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'linear' ? 'bg-white text-slate-800' : 'text-slate-500'}`}><span className="block w-4 text-center leading-4">↔</span></button>
+                  <button title="Split map and sequence" aria-pressed={splitView} onClick={() => { setSplitView(value => !value); setViewMode('map'); }} className={`rounded border p-1 ${splitView ? 'bg-white text-slate-800' : 'text-slate-500'}`}><span className="block w-4 text-center leading-4">▤</span></button>
                   <button onClick={undoChange} disabled={undoIndexRef.current <= 0} className="p-1.5 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent" title="Undo">
                     <Undo2 className="w-4 h-4" />
                   </button>
@@ -5264,7 +5325,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
 
 
                 {viewMode === 'map' && (
-                  <>
+                  <div className="relative" style={{ height: splitView ? '50%' : '100%', minHeight: splitView ? 180 : undefined }}>
                   <div className="absolute left-4 top-3 z-30 flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <button
                       onClick={() => setMapZoom(prev => Math.max(0.65, Math.round((prev - 0.1) * 10) / 10))}
@@ -5314,7 +5375,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                       paddingBottom: `${showMapSearch ? 40 : 16}px`
                     }}
                   >
-                    {isCircular
+                    {mapLayout === 'circular'
                       ? <CircularMap
                           seq={seq}
                           features={mapFeatures}
@@ -5337,6 +5398,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           isCircular={isCircular}
                         />
                       : <LinearMap
+                          onMapPositionClick={handlePositionClick}
                           seq={seq}
                           features={mapFeatures}
                           cutSites={activeCutSites}
@@ -5355,11 +5417,11 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                         />
                     }
                   </div>
-                  </>
+                  </div>
                 )}
                 {viewMode === 'library' && renderLibraryOverview()}
-                {viewMode === 'sequence' && (
-                  <>
+                {(viewMode === 'sequence' || (viewMode === 'map' && splitView)) && (
+                  <div className="relative border-slate-200" style={{ height: viewMode === 'map' && splitView ? '50%' : '100%', borderTopWidth: splitView ? 1 : 0, minHeight: splitView ? 180 : undefined }}>
                     <div className="absolute left-4 top-3 z-30 flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                       <button
                         onClick={() => setSequenceZoom(prev => Math.max(0.65, Math.round((prev - 0.1) * 10) / 10))}
@@ -5442,7 +5504,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                       zoom={sequenceZoom}
                       hasSearchOpen={showMapSearch}
                     />
-                  </>
+                  </div>
                 )}
                 {viewMode === 'alignment' && (
                   <div className="h-full overflow-auto">
@@ -5453,21 +5515,21 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 {viewMode === 'enzymes' && (
                   <div className="flex h-full min-h-0 flex-col gap-4">
                     <div className="flex flex-wrap items-center gap-2 pb-2">
-                      <div className="relative flex-1 min-w-48">
+                      <div className="relative w-full sm:w-auto sm:flex-1 min-w-0">
                         <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
                         <Input value={enzymeSearch} onChange={e => setEnzymeSearch(e.target.value)} placeholder="Search enzymes…" className="h-8 text-xs border-slate-200 pl-7" />
                       </div>
                       <select
                         value={enzListFilter}
                         onChange={e => setEnzListFilter(e.target.value)}
-                        className="h-8 min-w-44 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700"
+                        className="h-7 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700"
                       >
                         {ENZYME_CUT_FILTERS.map(filter => <option key={filter.id} value={filter.id}>{filter.label}</option>)}
                       </select>
                       <select
                         value={enzymeSupplierFilter}
                         onChange={e => setEnzymeSupplierFilter(e.target.value)}
-                        className="h-8 min-w-56 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700"
+                        className="h-7 min-w-0 flex-1 rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700"
                       >
                         {ENZYME_SUPPLIERS.map(supplier => <option key={supplier.id} value={supplier.id}>{supplier.label}</option>)}
                       </select>
@@ -5742,7 +5804,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                 })}
                               />
                             </td>
-                            <td className="py-2"><Input value={newFeature.label} onChange={e => setNewFeature(f => ({ ...f, label: e.target.value }))} placeholder="Feature name" className="h-7 text-xs" /></td>
+                            <td className="py-2"><Input autoFocus value={newFeature.label} onChange={e => setNewFeature(f => ({ ...f, label: e.target.value }))} placeholder="Feature name" className="h-7 text-xs" /></td>
                             <td className="py-2">
                               <select value={newFeature.type} onChange={e => setNewFeature(f => ({ ...f, type: e.target.value }))} className="h-7 w-full rounded-md border border-slate-200 bg-white px-1 text-xs">
                                 {FEATURE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
@@ -6054,7 +6116,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             <div className="h-4 w-[1px] bg-slate-200 flex-shrink-0" />
                             <button
                               onClick={() => handleAddFeatureFromSelection(selectedRange.start, selectedRange.end, 1)}
-                              className="inline-flex items-center gap-1 rounded bg-teal-50 px-2 py-1 text-xs font-bold text-teal-700 hover:bg-teal-100 transition-colors border border-teal-200 shadow-sm whitespace-nowrap flex-shrink-0"
+                              className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm whitespace-nowrap flex-shrink-0"
                               title="Add feature from selection"
                             >
                               <PiTagBold className="h-3 w-3" /> Add feature
@@ -6070,14 +6132,14 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                   onRemove: () => setSequenceColors(prev => prev.filter(c => !(c.start === selectedRange.start && c.end === selectedRange.end)))
                                 });
                               }}
-                              className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-1 text-xs font-bold text-amber-700 hover:bg-amber-100 transition-colors border border-amber-200 shadow-sm whitespace-nowrap flex-shrink-0"
+                              className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm whitespace-nowrap flex-shrink-0"
                               title="Color DNA sequence"
                             >
                               <Palette className="h-3 w-3" /> Color DNA
                             </button>
                             <button
                               onClick={() => handleAddPrimerFromSelection(selectedRange.start, selectedRange.end, 1)}
-                              className="inline-flex items-center gap-1 rounded bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 transition-colors border border-indigo-200 shadow-sm whitespace-nowrap flex-shrink-0"
+                              className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm whitespace-nowrap flex-shrink-0"
                               title="Add primer from selection"
                             >
                               <TbArrowsExchange className="h-3 w-3" /> Add primer
@@ -6200,12 +6262,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
               }`} 
               style={{ 
                 position: isMobile && !rightPanelCollapsed ? 'absolute' : 'relative',
-                width: rightPanelCollapsed ? 42 : isMobile ? 'min(calc(100% - 42px), 280px)' : activePanel === 'info' ? Math.max(rightWidth, 360) : rightWidth, 
+                width: rightPanelCollapsed ? (isMobile ? 0 : 42) : isMobile ? 'min(calc(100% - 42px), 280px)' : activePanel === 'info' ? Math.max(rightWidth, 360) : rightWidth, 
                 flexShrink: 0, 
                 display: viewMode === 'alignment' ? 'none' : undefined 
               }}
             >
-              {rightPanelCollapsed ? (
+              {rightPanelCollapsed ? (isMobile ? <button title="Open right panel" onClick={() => setRightPanelCollapsed(false)} className="absolute right-1 top-1 z-40 rounded border bg-white p-1"><ChevronLeft className="h-4 w-4" /></button> : (
                 <div className="flex flex-col items-center gap-2">
                   <div className="flex h-[53px] w-full items-center justify-center border-b border-slate-200 bg-white">
                     <button onClick={() => setRightPanelCollapsed(false)} className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-teal-700" title="Open right panel"><ChevronLeft className="w-4 h-4" /></button>
@@ -6215,7 +6277,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   <button onClick={() => { setRightPanelCollapsed(false); setActivePanel('primers'); }} className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100" title="Primers"><TbArrowsExchange className="w-4 h-4" /></button>
                   <button onClick={() => { setRightPanelCollapsed(false); setActivePanel('info'); }} className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100" title="Info"><Info className="w-4 h-4" /></button>
                 </div>
-              ) : (
+              )) : (
               <>
               <div className="flex h-[53px] items-center gap-1 border-b bg-slate-50 px-2">
                 <button
@@ -6277,7 +6339,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                               onChange: onChangeColor
                             })}
                           />
-                          <Input value={newFeature.label} onChange={e => setNewFeature(f => ({ ...f, label: e.target.value }))} placeholder="Name" className="h-7 text-xs border-slate-200" />
+                          <Input autoFocus value={newFeature.label} onChange={e => setNewFeature(f => ({ ...f, label: e.target.value }))} placeholder="Name" className="h-7 text-xs border-slate-200" />
                           <select value={newFeature.type} onChange={e => setNewFeature(f => ({ ...f, type: e.target.value }))} className="h-7 rounded-md border border-slate-200 bg-white px-1 text-xs text-slate-600">
                             {FEATURE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                           </select>
@@ -6298,8 +6360,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                       </div>
                     )}
                     <div ref={sidePanelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
-                      {features
-                        .map((feat, i) => ({ feat, i }))
+                      {[false, true].map(isMutationGroup => {
+                        const group = features.map((feat, i) => ({ feat, i })).filter(({ feat }) => (String(feat.type).toLowerCase() === 'mutation') === isMutationGroup);
+                        if (!group.length) return null;
+                        return <React.Fragment key={String(isMutationGroup)}>
+                        {isMutationGroup && <button className="flex w-full items-center gap-1 border-y border-slate-200 bg-slate-50 px-1 py-1 text-xs font-semibold text-slate-600" onClick={() => setMutationsExpanded(value => !value)} aria-expanded={mutationsExpanded}>{mutationsExpanded ? '▾' : '▸'} Mutations ({group.length})</button>}
+                        {(!isMutationGroup || mutationsExpanded) && group
                         .sort((a, b) => {
                           const hiddenA = a.feat.visible === false ? 1 : 0;
                           const hiddenB = b.feat.visible === false ? 1 : 0;
@@ -6307,10 +6373,10 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           return (a.feat.start || 0) - (b.feat.start || 0);
                         })
                         .map(({ feat, i }) => (
-                        <div key={feat.id || i}
+                        <div key={feat.id || i}><div
                           data-map-selection-key={`feature:${i}`}
                           className={`group flex items-center gap-1.5 border-b border-slate-100 px-1.5 py-1 transition-colors cursor-pointer ${feat.visible === false ? 'bg-slate-50/70 opacity-50' : ''} ${selectedFeatureIdx === i ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : 'hover:bg-slate-50'}`}
-                          onClick={() => setSelectedFeatureIdx(i === selectedFeatureIdx ? null : i)}
+                          onClick={() => { setSelectedFeatureIdx(i); setSelectedRange(null); setSelectedMapItem({ kind: 'feature', index: i }); setExpandedFeatureIdx(expandedFeatureIdx === i ? null : i); }}
                           onContextMenu={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -6349,11 +6415,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                 )}
                                 {feat.type && feat.type !== 'misc_feature' && <div className="text-[10px] text-slate-400 capitalize truncate">{feat.type}</div>}
                               </div>
+                              <span className="text-[10px] text-slate-500 whitespace-nowrap">{Math.max(0, feat.end - feat.start)} bp {expandedFeatureIdx === i ? '▾' : '▸'}</span>
                               <select
                                 value={strandToSymbol(feat.strand)}
                                 onClick={e => e.stopPropagation()}
                                 onChange={e => updateFeature(i, { strand: symbolToStrand(e.target.value) })}
-                                className="h-6 w-8 flex-shrink-0 rounded border border-slate-200 bg-white px-0.5 text-center text-xs text-slate-600"
+                                className="h-6 w-12 flex-shrink-0 rounded border border-slate-200 bg-white px-1 text-center text-xs text-slate-600"
                                 title="Change direction"
                               >
                                 {['←', '→', '↔', '–'].map(symbol => <option key={symbol} value={symbol}>{symbol}</option>)}
@@ -6365,7 +6432,17 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             </>
                           )}
                         </div>
-                      ))}
+                        {expandedFeatureIdx === i && <div className="space-y-1 border-b border-slate-100 p-1 text-[10px]" onClick={e => e.stopPropagation()}>
+                          <div className="grid grid-cols-[minmax(0,1fr)_58px_58px] gap-1">
+                            <label>Notes<textarea aria-label="Feature notes" value={feat.notes || ''} onChange={e => updateFeature(i, { notes: e.target.value })} className="w-full min-h-6 rounded border p-1" /></label>
+                            <label>Start<input aria-label="Feature start" type="number" min="1" max={feat.end} value={feat.start + 1} onChange={e => { const value = Number(e.target.value); if (value >= 1 && value <= feat.end) updateFeature(i, { start: value - 1 }); }} className="h-6 w-full rounded border px-1" /></label>
+                            <label>End<input aria-label="Feature end" type="number" min={feat.start + 1} max={sequence.length} value={feat.end} onChange={e => { const value = Number(e.target.value); if (value > feat.start && value <= sequence.length) updateFeature(i, { end: value }); }} className="h-6 w-full rounded border px-1" /></label>
+                          </div>
+                          <label className="block">Sequence<textarea aria-label="Feature sequence" key={`${feat.start}-${feat.end}-${sequence}`} defaultValue={sequence.slice(feat.start, feat.end)} onBlur={e => updateFeatureSequence(i, e.target.value)} className="block h-12 w-full rounded border p-1 font-mono" /></label>
+                        </div>}
+                        </div>
+                      ))}</React.Fragment>;
+                      })}
                       {features.length === 0 && <p className="text-xs text-slate-400 text-center py-4">No features. Add manually or import a GenBank/ApE file.</p>}
                     </div>
                   </div>
@@ -6398,7 +6475,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-white z-10">
                           <tr className="border-b border-slate-100">
-                            <th className="text-left py-1.5 px-1 text-slate-500 font-semibold w-6"></th>
+                            <th className="text-left py-1.5 px-1 text-slate-500 font-semibold w-6"><input aria-label="Select all enzymes" type="checkbox" checked={_filteredEnzymes.length > 0 && _filteredEnzymes.every(e => !!selectedEnzymes[e.name])} onChange={event => { const checked = event.target.checked; setSelectedEnzymes(prev => { const next = { ...prev }; _filteredEnzymes.forEach(({ name }) => { if (checked) next[name] = next[name] || { color: null }; else delete next[name]; }); return next; }); }} /></th>
                             <th className="text-left py-1.5 px-1 text-slate-500 font-semibold">Enzyme</th>
                             <th className="text-center py-1.5 px-1 text-slate-500 font-semibold w-8"></th>
                             <th className="text-center py-1.5 px-1 text-slate-500 font-semibold w-10">Cuts</th>
@@ -6579,7 +6656,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                         return (
                           <div key={p.id} data-map-selection-key={`primer:${i}`} className={`${isExpanded ? 'bg-slate-100/80' : ''}`}>
                             <div
-                              className={`flex cursor-pointer items-center gap-2 border-b border-slate-100 px-2 py-2 transition-colors ${isMapFocused ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : isExpanded ? 'bg-slate-100/80' : 'hover:bg-slate-50'}`}
+                              className={`flex cursor-pointer items-center gap-2 border-b border-slate-100 px-1 py-1 transition-colors ${isMapFocused ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : isExpanded ? 'bg-slate-100/80' : 'hover:bg-slate-50'}`}
                               onClick={() => setExpandedPrimerId(isExpanded ? null : p.id)}
                               onContextMenu={(e) => {
                                 e.preventDefault();
@@ -6609,7 +6686,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                               </button>
                             </div>
                             {isExpanded && (
-                              <div className="border-b border-slate-100 px-2 py-2">
+                              <div className="border-b border-slate-100 px-1 py-1">
                                 {renderPrimerDetails(p, i, sites)}
                               </div>
                             )}

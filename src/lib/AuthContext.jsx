@@ -173,7 +173,7 @@ export const AuthProvider = ({ children }) => {
     initializeAuth();
 
     const { data: listener } =
-      supabase.auth.onAuthStateChange(async (event, session) => {
+      supabase.auth.onAuthStateChange((event, session) => {
         if (!mounted) return;
 
         console.log('onAuthStateChange event:', event, 'session:', !!session);
@@ -196,14 +196,14 @@ export const AuthProvider = ({ children }) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
 
-        try {
-          if (currentUser) {
-            await fetchProfile(currentUser.id);
-          } else {
-            setProfile(null);
-          }
-        } catch (err) {
-          console.warn('Error fetching profile in onAuthStateChange:', err);
+        // Supabase awaits auth listeners. Calling another Supabase request
+        // here can wait for this same listener and deadlock all account writes.
+        if (currentUser) {
+          setTimeout(() => {
+            if (mounted) fetchProfile(currentUser.id).catch(err => console.warn('Error fetching profile:', err));
+          }, 0);
+        } else {
+          setProfile(null);
         }
       }) || {
         data: {

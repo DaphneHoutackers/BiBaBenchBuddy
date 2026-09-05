@@ -1,3 +1,4 @@
+import { reconcileHistory, sameHistoryRevision, retainHistory } from '@/lib/historySync';
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { supabase, isSyncEnabled } from '@/lib/supabase';
 import { makeId } from '@/utils/makeId';
@@ -56,9 +57,34 @@ export function HistoryProvider({ children }) {
 
   const getStorageKey = useCallback(() => {
     return user ? `${LOCAL_STORAGE_KEY}_${user.id}` : LOCAL_STORAGE_KEY;
-  }, [user]);
+  }, [user?.id]);
 
   const [history, setHistory] = useState([]);
+  const accountRef = useRef(user?.id);
+  accountRef.current = user?.id;
+
+  const uploadQueueRef = useRef(Promise.resolve());
+  const [syncError, setSyncError] = useState(null);
+  const uploadRows = useCallback((rows) => {
+    const accountId = user?.id;
+    const task = uploadQueueRef.current.catch(() => {}).then(async () => {
+      if (!accountId || accountRef.current !== accountId) throw new Error('Account changed; sign in and save again.');
+      const controller = new AbortController();
+      let timer;
+      try {
+        const response = await Promise.race([
+          supabase.from('tool_history').upsert(rows, { onConflict: 'id' }).abortSignal(controller.signal),
+          new Promise((_, reject) => { timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('Saving timed out. Your edits are kept on this device; try Save again.'));
+          }, 12000); }),
+        ]);
+        if (response.error) throw response.error;
+      } finally { clearTimeout(timer); }
+    });
+    uploadQueueRef.current = task;
+    return task;
+  }, [user?.id]);
 
   // Load history whenever user changes
   useEffect(() => {
@@ -78,7 +104,7 @@ export function HistoryProvider({ children }) {
     
     setIsRemoteLoading(true);
     loadRemoteHistory([]).finally(() => setIsRemoteLoading(false)); // pass empty to avoid syncing guest history to new user accidentally unless intended
-  }, [user, getStorageKey]);
+  }, [user?.id, getStorageKey]);
 
   // Keep a ref of history for reliable access in async callbacks
   const historyRef = useRef(history);
@@ -115,7 +141,7 @@ export function HistoryProvider({ children }) {
       .eq('user_id', user.id)
       .eq('toolid', '__seq_analyzer_library__');
 
-    if (error || !data) return;
+    if (error || !data || accountRef.current !== user.id) return;
 
     const normalized = deduplicateHistory(
       [...data, ...(!hiddenError && hiddenData ? hiddenData : [])]
@@ -123,12 +149,8 @@ export function HistoryProvider({ children }) {
         .sort((a, b) => b.timestamp - a.timestamp)
     );
 
-    setHistory(normalized);
-    try {
-      localStorage.setItem(getStorageKey(), JSON.stringify(normalized));
-    } catch (err) {
-      console.warn('Failed to persist remote history locally:', err);
-    }
+    setHistory(prev => reconcileHistory(prev, normalized));
+
   }, [user, getStorageKey]);
 
   // Keep already-open devices current and refresh again when a mobile/desktop
@@ -140,9 +162,13 @@ export function HistoryProvider({ children }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tool_history', filter: `user_id=eq.${user.id}` }, refresh)
       .subscribe();
     const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
+    const poll = window.setInterval(refresh, 5000);
+    window.addEventListener('online', refresh);
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      window.clearInterval(poll);
+      window.removeEventListener('online', refresh);
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', onVisibility);
       supabase.removeChannel(channel);
@@ -166,14 +192,13 @@ export function HistoryProvider({ children }) {
 
       const rows = unsynced.map((item) => buildRemoteRow(item, user.id));
 
-      const { error } = await supabase
-        .from('tool_history')
-        .upsert(rows, { onConflict: 'id' });
-
-      if (!error) {
+      try {
+        await uploadRows(rows);
+        if (accountRef.current !== user.id) return;
+        setSyncError(null);
         setHistory((prev) =>
           prev.map((item) => {
-            if (!unsynced.some((u) => u.id === item.id)) return item;
+            if (!unsynced.some((u) => sameHistoryRevision(u, item))) return item;
             const createdAt = item.createdAt
               ? item.createdAt
               : item.timestamp
@@ -183,16 +208,16 @@ export function HistoryProvider({ children }) {
             return {
               ...item,
               createdAt,
-              timestamp: new Date(createdAt).getTime(),
+              timestamp: item.timestamp,
               synced: true,
             };
           })
         );
-      }
-    }, 800);
+      } catch (error) { setSyncError(error.message || 'Sync failed'); }
+    }, 150);
 
     return () => clearTimeout(syncTimeout);
-  }, [history, user, getStorageKey]);
+  }, [history, user, getStorageKey, uploadRows]);
 
   const addHistoryItem = useCallback((item) => {
     setHistory((prev) => {
@@ -234,14 +259,33 @@ export function HistoryProvider({ children }) {
           synced: false,
         };
 
-        return updated.sort((a, b) => b.timestamp - a.timestamp).slice(0, 100);
+        return retainHistory(updated.sort((a, b) => b.timestamp - a.timestamp));
       }
 
-      return [normalizedItem, ...prev]
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 100);
+      return retainHistory([normalizedItem, ...prev].sort((a, b) => b.timestamp - a.timestamp));
     });
   }, []);
+
+  const saveHistoryItems = useCallback(async (items) => {
+    const accountId = user?.id;
+    const now = Date.now();
+    const revisions = items.map(item => ({ ...item, id: item.id || makeId(), timestamp: now, createdAt: new Date(now).toISOString(), synced: false }));
+    const ids = new Set(revisions.map(item => item.id));
+    const next = retainHistory([...revisions, ...historyRef.current.filter(item => !ids.has(item.id))].sort((a, b) => b.timestamp - a.timestamp));
+    historyRef.current = next;
+    setHistory(next);
+    localStorage.setItem(getStorageKey(), JSON.stringify(next));
+    if (!accountId || !isSyncEnabled()) throw new Error('Account sync is unavailable. Your edits are saved on this device.');
+    try {
+      await uploadRows(revisions.map(item => buildRemoteRow(item, accountId)));
+      if (accountRef.current !== accountId) throw new Error('Account changed during save.');
+      setHistory(prev => prev.map(item => revisions.some(sent => sameHistoryRevision(sent, item)) ? { ...item, synced: true } : item));
+      setSyncError(null);
+    } catch (error) {
+      setSyncError(error.message || 'Save failed');
+      throw error;
+    }
+  }, [user?.id, getStorageKey, uploadRows]);
 
   const deleteHistoryItem = useCallback(async (id) => {
     setHistory((prev) => prev.filter((item) => item.id !== id));
@@ -296,6 +340,8 @@ export function HistoryProvider({ children }) {
         user,
         isRemoteLoading,
         addHistoryItem,
+        saveHistoryItems,
+        syncError,
         deleteHistoryItem,
         clearHistory,
         reloadHistory: loadRemoteHistory,
