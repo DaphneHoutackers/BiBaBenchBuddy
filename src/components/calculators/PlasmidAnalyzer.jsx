@@ -1,3 +1,4 @@
+import ViewportPanel from '@/components/shared/ViewportPanel';
 import React, { useState, useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -768,6 +769,7 @@ function CircularMap({
   selectedRange,
   _rangeColor,
   onLabelClick,
+  onLabelDoubleClick,
   onLabelHover,
   onLabelLeave,
   onLabelContextMenu,
@@ -1014,6 +1016,7 @@ function CircularMap({
               strokeWidth={selected ? 3 : 0.9}
               cursor="pointer"
               onClick={(e) => onLabelClick?.(e, feat, index)}
+              onDoubleClick={(e) => onLabelDoubleClick?.(e, feat, index)}
               onContextMenu={(e) => onLabelContextMenu?.(e, feat, index)}
               onMouseEnter={(e) => onLabelHover?.(e, feat, index)}
               onMouseLeave={onLabelLeave}
@@ -1081,6 +1084,7 @@ function CircularMap({
             key={`label-${label.kind}-${label.sourceIndex}-${data.name || data.label || data.pos}`}
             cursor="pointer"
             onClick={(e) => isEnzyme ? onEnzymeClick?.(e, data, label.sourceIndex) : onLabelClick?.(e, data, label.sourceIndex)}
+            onDoubleClick={(e) => isEnzyme ? undefined : onLabelDoubleClick?.(e, data, label.sourceIndex)}
             onContextMenu={(e) => isEnzyme ? onEnzymeContextMenu?.(e, data, label.sourceIndex) : onLabelContextMenu?.(e, data, label.sourceIndex)}
             onMouseEnter={(e) => isEnzyme ? onEnzymeHover?.(e, data, label.sourceIndex) : onLabelHover?.(e, data, label.sourceIndex)}
             onMouseLeave={isEnzyme ? onEnzymeLeave : onLabelLeave}
@@ -1106,7 +1110,7 @@ function CircularMap({
 }
 
 // ── Linear Map ────────────────────────────────────────────────────────────────
-function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapItem, selectedRange, rangeColor, onLabelClick, onLabelHover, onLabelLeave, onLabelContextMenu, onEnzymeClick, onEnzymeHover, onEnzymeLeave, onEnzymeContextMenu, name }) {
+function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapItem, selectedRange, rangeColor, onLabelClick, onLabelDoubleClick, onLabelHover, onLabelLeave, onLabelContextMenu, onEnzymeClick, onEnzymeHover, onEnzymeLeave, onEnzymeContextMenu, name }) {
   const totalLen = seq.length; if (!totalLen) return null;
   const W = 820, H = 240, trackY = 110, FW = 18, ml = 40, mr = 780, mw = 740;
   const xOf = pos => ml + (pos / totalLen) * mw;
@@ -1160,6 +1164,7 @@ function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapIte
             data-name={feat.label}
             cursor="pointer"
             onClick={(e) => onLabelClick?.(e, feat, i)}
+            onDoubleClick={(e) => onLabelDoubleClick?.(e, feat, i)}
             onContextMenu={(e) => onLabelContextMenu?.(e, feat, i)}
             onMouseEnter={(e) => onLabelHover?.(e, feat, i)}
             onMouseLeave={onLabelLeave}
@@ -1206,6 +1211,8 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const [saveMessage, setSaveMessage] = useState('');
   const [mapLayout, setMapLayout] = useState('circular');
   const [splitView, setSplitView] = useState(false);
+  const [splitRatio, setSplitRatio] = useState(50);
+  const splitDragRef = useRef(false);
   const [mutationsExpanded, setMutationsExpanded] = useState(true);
   const [toolTab, setToolTab] = useState('analyzer');
   const [phase, setPhase] = useState('input');
@@ -2416,6 +2423,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const startRenamingLibraryItem = (item) => {
     setRenamingId(item.id);
     setRenamingName(item.name);
+    setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select(); }, 0);
   };
   const updateLibraryItem = (id, updates) => {
     if (id === activeEntryId && updates.name !== undefined) {
@@ -3927,7 +3935,26 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
 
   const handleFeatureClick = (e, feature, idx) => handleMapSelection(e, feature.kind || 'feature', feature, idx);
   const handleFeatureHover = (e, feature, idx) => showHoverPopup(e, feature.kind || 'feature', feature, idx);
-  const handleFeatureContextMenu = (e, feature, idx) => openMapContextPopup(e, feature.kind || 'feature', feature, idx);
+  const handleFeatureContextMenu = (e, feature, idx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const resolvedIndex = feature.sourceIndex ?? (typeof idx === 'number' && idx >= 0 ? idx : features.findIndex(f => f === feature || (f.id && f.id === feature.id) || (f.start === feature?.start && f.end === feature?.end && f.label === feature?.label)));
+    if (resolvedIndex >= 0 && resolvedIndex < features.length) {
+      setFeatureContextMenu({ index: resolvedIndex, ...clampPopupPoint(e.clientX, e.clientY, 224, 340) });
+      setPopupData(null);
+    } else {
+      openMapContextPopup(e, feature.kind || 'feature', feature, idx);
+    }
+  };
+  const handleFeatureDoubleClick = (e, feature, idx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const resolvedIndex = feature.sourceIndex ?? (typeof idx === 'number' && idx >= 0 ? idx : features.findIndex(f => f === feature || (f.id && f.id === feature.id) || (f.start === feature?.start && f.end === feature?.end && f.label === feature?.label)));
+    if (resolvedIndex >= 0 && resolvedIndex < features.length) {
+      setFeatureContextMenu({ index: resolvedIndex, ...clampPopupPoint(e.clientX, e.clientY, 224, 340) });
+      setPopupData(null);
+    }
+  };
   const handleEnzymeClick = (e, site, idx) => handleMapSelection(e, 'enzyme', site, idx);
   const handleEnzymeHover = (e, site, idx) => showHoverPopup(e, 'enzyme', site, idx);
   const handleEnzymeContextMenu = (e, site, idx) => openMapContextPopup(e, 'enzyme', site, idx);
@@ -4306,7 +4333,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         const targetParentIdForNewItems = item.type === 'folder' ? item.id : item.parentId || null;
         const isBatch = batchIds.length > 1;
         return (
-          <div
+          <ViewportPanel
             className="fixed z-[300] w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-2xl"
             style={{ left: libraryContextMenu.x, top: libraryContextMenu.y }}
             onMouseDown={e => e.stopPropagation()}
@@ -4447,7 +4474,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 </div>
               </div>
             )}
-          </div>
+          </ViewportPanel>
         );
       })()}
       {otherFileContextMenu && (() => {
@@ -4455,7 +4482,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         if (!item) return null;
         const folders = library.filter(entry => entry.type === 'folder');
         return (
-          <div
+          <ViewportPanel
             className="fixed z-[300] w-60 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-2xl"
             style={{ left: otherFileContextMenu.x, top: otherFileContextMenu.y }}
             onMouseDown={e => e.stopPropagation()}
@@ -4483,7 +4510,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             >
               <X className="h-3.5 w-3.5" /> Close file
             </button>
-          </div>
+          </ViewportPanel>
         );
       })()}
       {featureContextMenu && (() => {
@@ -4491,7 +4518,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         const feat = features[index];
         if (!feat) return null;
         return (
-          <div
+          <ViewportPanel
             className="fixed z-[300] w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-2xl"
             style={{ left: featureContextMenu.x, top: featureContextMenu.y }}
             onMouseDown={e => e.stopPropagation()}
@@ -4526,7 +4553,15 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
             {featureContextPanel === 'type' && (
-              <div className="absolute right-full top-12 z-[310] mr-2 max-h-72 w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+              <ViewportPanel
+                className="fixed z-[310] max-h-72 w-52 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+                style={{
+                  left: featureContextMenu.x > 240 ? featureContextMenu.x - 215 : featureContextMenu.x + 230,
+                  top: Math.max(10, Math.min(window.innerHeight - 300, featureContextMenu.y + 40))
+                }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
                 {FEATURE_TYPES.map(type => (
                   <button
                     key={type}
@@ -4536,10 +4571,18 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                     {type}
                   </button>
                 ))}
-              </div>
+              </ViewportPanel>
             )}
             {featureContextPanel === 'direction' && (
-              <div className="absolute right-full top-20 z-[310] mr-2 w-24 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl" onMouseDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+              <ViewportPanel
+                className="fixed z-[310] w-24 rounded-xl border border-slate-200 bg-white p-1.5 shadow-2xl"
+                style={{
+                  left: featureContextMenu.x > 120 ? featureContextMenu.x - 105 : featureContextMenu.x + 230,
+                  top: Math.max(10, Math.min(window.innerHeight - 200, featureContextMenu.y + 70))
+                }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
                 {['←', '→', '↔', '–'].map(symbol => (
                   <button
                     key={symbol}
@@ -4549,9 +4592,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                     {symbol}
                   </button>
                 ))}
-              </div>
+              </ViewportPanel>
             )}
-          </div>
+          </ViewportPanel>
         );
       })()}
       {primerContextMenu && (() => {
@@ -4561,7 +4604,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         const sites = seq ? findPrimerSites(primer.seq, seq, primer.annealing || primer.seq) : [];
         const firstSite = sites[0];
         return (
-          <div
+          <ViewportPanel
             className="fixed z-[300] w-60 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-2xl"
             style={{ left: primerContextMenu.x, top: primerContextMenu.y }}
             onMouseDown={e => e.stopPropagation()}
@@ -4587,11 +4630,11 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             <button onClick={() => { deletePrimer(index); setPrimerContextMenu(null); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-red-600 hover:bg-red-50">
               <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
-          </div>
+          </ViewportPanel>
         );
       })()}
       {popupData && (
-        <div 
+        <ViewportPanel 
           onClick={e => e.stopPropagation()}
           className="fixed z-[100] bg-white border border-slate-200 text-slate-800 p-3 rounded-xl shadow-2xl text-xs w-64"
           style={popupData.y < 330
@@ -4713,7 +4756,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             </p>
           )}
           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.1)]"></div>
-        </div>
+        </ViewportPanel>
       )}
       {showFeatureImport && (
         <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-900/30 p-4" onMouseDown={() => setShowFeatureImport(false)}>
@@ -4771,7 +4814,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       )}
       {librarySequenceEditor && <div className="fixed inset-0 z-[360] flex items-center justify-center bg-slate-900/35 p-4" onMouseDown={() => setLibrarySequenceEditor(null)}><div className="w-full max-w-3xl rounded-xl border border-slate-200 bg-white p-4 shadow-2xl" onMouseDown={e => e.stopPropagation()}><div className="mb-3 flex items-center justify-between"><div><h3 className="text-sm font-bold text-slate-800">Edit DNA sequence</h3><p className="text-xs text-slate-500">{librarySequenceEditor.name}</p></div><button onClick={() => setLibrarySequenceEditor(null)}><X className="h-4 w-4" /></button></div><Textarea value={librarySequenceEditor.sequence} onChange={e => setLibrarySequenceEditor(prev => ({ ...prev, sequence: e.target.value.toUpperCase().replace(/[^ATGCN]/g, '') }))} className="h-64 resize-none font-mono text-xs" /><div className="mt-3 flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => setLibrarySequenceEditor(null)}>Cancel</Button><Button size="sm" onClick={() => { const entry = library.find(item => item.id === librarySequenceEditor.id); updateLibraryItem(librarySequenceEditor.id, { sequence: librarySequenceEditor.sequence }); if (entry?.id === activeEntryId) { setSequence(librarySequenceEditor.sequence); setRawInput(librarySequenceEditor.sequence); } setLibrarySequenceEditor(null); }}>Save</Button></div></div></div>}
       {originEditor && (
-        <div
+        <ViewportPanel
           className="fixed z-[370] w-64 rounded-xl border border-slate-200 bg-white p-3 text-xs shadow-2xl space-y-2"
           style={{ left: originEditor.x, top: originEditor.y }}
           onMouseDown={e => e.stopPropagation()}
@@ -4797,9 +4840,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             />
             <Button size="sm" className="h-8 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => setSequenceOrigin(originEditor.position)}>Set</Button>
           </div>
-        </div>
+        </ViewportPanel>
       )}
-      {sequencingLinkMenu && <div className="fixed z-[380] w-40 rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-2xl" style={{ left: sequencingLinkMenu.x, top: sequencingLinkMenu.y }} onMouseDown={e => e.stopPropagation()}><button onClick={() => { setSequencingUrlDraft(activeMetadata.sequencingUrl || ''); setShowSequencingUrlEditor(true); setSequencingLinkMenu(null); }} className="w-full rounded px-2 py-1.5 text-left hover:bg-slate-50">Edit link</button><button onClick={() => { updateActiveMetadata({ sequencingUrl: '' }); setSequencingLinkMenu(null); }} className="w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Remove link</button></div>}
+      {sequencingLinkMenu && <ViewportPanel className="fixed z-[380] w-40 rounded-lg border border-slate-200 bg-white p-1 text-xs shadow-2xl" style={{ left: sequencingLinkMenu.x, top: sequencingLinkMenu.y }} onMouseDown={e => e.stopPropagation()}><button onClick={() => { setSequencingUrlDraft(activeMetadata.sequencingUrl || ''); setShowSequencingUrlEditor(true); setSequencingLinkMenu(null); }} className="w-full rounded px-2 py-1.5 text-left hover:bg-slate-50">Edit link</button><button onClick={() => { updateActiveMetadata({ sequencingUrl: '' }); setSequencingLinkMenu(null); }} className="w-full rounded px-2 py-1.5 text-left text-red-600 hover:bg-red-50">Remove link</button></ViewportPanel>}
       {showPrimerImport && (
         <div className="fixed inset-0 z-[260] flex items-center justify-center bg-slate-900/30 p-4" onMouseDown={() => setShowPrimerImport(false)}>
           <div className="max-h-[70vh] w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl" onMouseDown={e => e.stopPropagation()}>
@@ -5190,8 +5233,11 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             )}
                             
                             {renamingId === entry.id ? (
-                              <Input 
+                              <Input
+                                ref={renameInputRef}
                                 autoFocus
+                                onFocus={event => event.target.select()}
+                                onMouseDown={event => event.stopPropagation()}
                                 value={renamingName}
                                 onChange={e => setRenamingName(e.target.value)}
                                 onKeyDown={e => {
@@ -5211,6 +5257,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                             ) : (
                               <span
                                 className="text-[13px] flex-1 truncate text-slate-900"
+                                onDoubleClick={event => { event.stopPropagation(); startRenamingLibraryItem(entry); }}
                               >
                                 {entry.name}
                               </span>
@@ -5308,9 +5355,6 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   </button>
                 </div>
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <button title="Circular map view" aria-pressed={mapLayout === 'circular'} onClick={() => { setMapLayout('circular'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'circular' ? 'bg-white text-slate-800' : 'text-slate-500'}`}><BiDoughnutChart className="h-4 w-4" /></button>
-                  <button title="Linear map view" aria-pressed={mapLayout === 'linear'} onClick={() => { setMapLayout('linear'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'linear' ? 'bg-white text-slate-800' : 'text-slate-500'}`}><span className="block w-4 text-center leading-4">↔</span></button>
-                  <button title="Split map and sequence" aria-pressed={splitView} onClick={() => { setSplitView(value => !value); setViewMode('map'); }} className={`rounded border p-1 ${splitView ? 'bg-white text-slate-800' : 'text-slate-500'}`}><span className="block w-4 text-center leading-4">▤</span></button>
                   <button onClick={undoChange} disabled={undoIndexRef.current <= 0} className="p-1.5 rounded-lg text-slate-500 hover:text-teal-700 hover:bg-white disabled:opacity-30 disabled:hover:bg-transparent" title="Undo">
                     <Undo2 className="w-4 h-4" />
                   </button>
@@ -5322,10 +5366,13 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
               </div>
 
               <div ref={mapRef} className="relative flex-1 min-h-0 overflow-auto px-4 py-1">
-
-
                 {viewMode === 'map' && (
-                  <div className="relative" style={{ height: splitView ? '50%' : '100%', minHeight: splitView ? 180 : undefined }}>
+                  <div className="relative" style={{ height: splitView ? `calc(${splitRatio}% - 3px)` : '100%', minHeight: 0 }}>
+                  <div className="absolute right-3 top-3 z-40 flex items-center gap-0.5 rounded-xl bg-slate-200/90 p-0.5">
+                    <button title="Circular map view" aria-pressed={mapLayout === 'circular'} onClick={() => { setMapLayout('circular'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'circular' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><BiDoughnutChart className="h-4 w-4" /></button>
+                    <button title="Linear map view" aria-pressed={mapLayout === 'linear'} onClick={() => { setMapLayout('linear'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'linear' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><span className="block w-4 text-center leading-4">↔</span></button>
+                    <button title="Split map and sequence" aria-pressed={splitView} onClick={() => { setSplitView(value => !value); setViewMode('map'); }} className={`rounded border p-1 ${splitView ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><span className="block w-4 text-center leading-4">▤</span></button>
+                  </div>
                   <div className="absolute left-4 top-3 z-30 flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <button
                       onClick={() => setMapZoom(prev => Math.max(0.65, Math.round((prev - 0.1) * 10) / 10))}
@@ -5385,6 +5432,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           selectedRange={selectedRange}
                           rangeColor={rangeColor}
                           onLabelClick={handleFeatureClick}
+                          onLabelDoubleClick={handleFeatureDoubleClick}
                           onLabelHover={handleFeatureHover}
                           onLabelLeave={clearHoverPopup}
                           onLabelContextMenu={handleFeatureContextMenu}
@@ -5406,6 +5454,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           selectedRange={selectedRange}
                           rangeColor={rangeColor}
                           onLabelClick={handleFeatureClick}
+                          onLabelDoubleClick={handleFeatureDoubleClick}
                           onLabelHover={handleFeatureHover}
                           onLabelLeave={clearHoverPopup}
                           onLabelContextMenu={handleFeatureContextMenu}
@@ -5420,8 +5469,14 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   </div>
                 )}
                 {viewMode === 'library' && renderLibraryOverview()}
+                {viewMode === 'map' && splitView && <div role="separator" aria-label="Resize map and sequence" aria-orientation="horizontal" aria-valuenow={splitRatio} tabIndex={0}
+                  className="relative z-40 h-1.5 cursor-row-resize touch-none bg-slate-200 hover:bg-teal-400"
+                  onPointerDown={event => { splitDragRef.current = true; event.currentTarget.setPointerCapture(event.pointerId); }}
+                  onPointerMove={event => { if (!splitDragRef.current) return; const rect = mapRef.current.getBoundingClientRect(); setSplitRatio(Math.max(15, Math.min(85, (event.clientY - rect.top) / rect.height * 100))); }}
+                  onPointerUp={() => { splitDragRef.current = false; }} onPointerCancel={() => { splitDragRef.current = false; }}
+                  onKeyDown={event => { if (event.key === 'ArrowUp' || event.key === 'ArrowDown') { event.preventDefault(); setSplitRatio(value => Math.max(15, Math.min(85, value + (event.key === 'ArrowUp' ? -5 : 5)))); } }} />}
                 {(viewMode === 'sequence' || (viewMode === 'map' && splitView)) && (
-                  <div className="relative border-slate-200" style={{ height: viewMode === 'map' && splitView ? '50%' : '100%', borderTopWidth: splitView ? 1 : 0, minHeight: splitView ? 180 : undefined }}>
+                  <div className="relative border-slate-200" style={{ height: viewMode === 'map' && splitView ? `calc(${100 - splitRatio}% - 3px)` : '100%', borderTopWidth: splitView ? 1 : 0, minHeight: 0 }}>
                     <div className="absolute left-4 top-3 z-30 flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                       <button
                         onClick={() => setSequenceZoom(prev => Math.max(0.65, Math.round((prev - 0.1) * 10) / 10))}
@@ -6321,9 +6376,10 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   <div className="flex h-full min-h-0 flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-600">Features ({features.length})</span>
+                      <div className="flex items-center gap-1"><button title="Import features" onClick={() => setShowFeatureImport(true)} className="rounded border border-slate-200 p-1 text-slate-600"><Download className="h-3.5 w-3.5" /></button>
                       <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => openAddFeature('side')}>
                         <Plus className="w-3.5 h-3.5" /> Add
-                      </Button>
+                      </Button></div>
                     </div>
                     {showAddFeature && addFeatureSurface === 'side' && (
                       <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
@@ -6359,13 +6415,16 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                         </div>
                       </div>
                     )}
-                    <div ref={sidePanelScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+                    <div ref={sidePanelScrollRef} className="min-h-0 flex-1 flex flex-col overflow-hidden">
                       {[false, true].map(isMutationGroup => {
-                        const group = features.map((feat, i) => ({ feat, i })).filter(({ feat }) => (String(feat.type).toLowerCase() === 'mutation') === isMutationGroup);
+                        const group = features.map((feat, i) => ({ feat, i })).filter(({ feat }) => {
+                          const t = String(feat.type || '').toLowerCase();
+                          return (t === 'mutation' || t === 'mutations') === isMutationGroup;
+                        });
                         if (!group.length) return null;
-                        return <React.Fragment key={String(isMutationGroup)}>
+                        return <div key={String(isMutationGroup)} className={isMutationGroup ? 'flex min-h-0 max-h-[40%] flex-col shrink-0' : 'min-h-0 flex-1 overflow-y-auto overscroll-contain'}>
                         {isMutationGroup && <button className="flex w-full items-center gap-1 border-y border-slate-200 bg-slate-50 px-1 py-1 text-xs font-semibold text-slate-600" onClick={() => setMutationsExpanded(value => !value)} aria-expanded={mutationsExpanded}>{mutationsExpanded ? '▾' : '▸'} Mutations ({group.length})</button>}
-                        {(!isMutationGroup || mutationsExpanded) && group
+                        <div className={isMutationGroup ? 'min-h-0 overflow-y-auto overscroll-contain' : undefined}>{(!isMutationGroup || mutationsExpanded) && group
                         .sort((a, b) => {
                           const hiddenA = a.feat.visible === false ? 1 : 0;
                           const hiddenB = b.feat.visible === false ? 1 : 0;
@@ -6441,7 +6500,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           <label className="block">Sequence<textarea aria-label="Feature sequence" key={`${feat.start}-${feat.end}-${sequence}`} defaultValue={sequence.slice(feat.start, feat.end)} onBlur={e => updateFeatureSequence(i, e.target.value)} className="block h-12 w-full rounded border p-1 font-mono" /></label>
                         </div>}
                         </div>
-                      ))}</React.Fragment>;
+                      ))}</div></div>;
                       })}
                       {features.length === 0 && <p className="text-xs text-slate-400 text-center py-4">No features. Add manually or import a GenBank/ApE file.</p>}
                     </div>
@@ -6597,9 +6656,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                   <div className="flex h-full min-h-0 flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-slate-600">Primers ({primers.length})</span>
-                      <button onClick={() => openAddPrimer('side')} className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">
+                      <div className="flex items-center gap-1"><button title="Import primers" onClick={() => setShowPrimerImport(true)} className="rounded border border-slate-200 p-1 text-slate-600"><Download className="h-3.5 w-3.5" /></button><button onClick={() => openAddPrimer('side')} className="flex items-center gap-1 text-xs text-teal-600 hover:text-teal-700 font-medium">
                         <Plus className="w-3.5 h-3.5" /> Add
-                      </button>
+                      </button></div>
                     </div>
                     {showAddPrimer && addPrimerSurface === 'side' && (
                       <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1.5">
@@ -6776,7 +6835,7 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
   const left = Math.max(10, Math.min(window.innerWidth - 200, activeColorPicker.rect.left - 130));
 
   return (
-    <div
+    <ViewportPanel
       id="fixed-color-picker-popover"
       className="fixed z-[9999] w-48 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl transition-all select-none"
       style={{
@@ -6870,6 +6929,6 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
           </button>
         )}
       </div>
-    </div>
+    </ViewportPanel>
   );
 }

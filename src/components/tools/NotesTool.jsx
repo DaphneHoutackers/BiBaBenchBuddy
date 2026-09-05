@@ -1,3 +1,4 @@
+import ViewportPanel from '@/components/shared/ViewportPanel';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useHistory } from '@/context/HistoryContext';
 import {
@@ -54,9 +55,6 @@ import {
   FolderPlus,
   Globe,
   Hash,
-  Heading1,
-  Heading2,
-  Heading3,
   Heart,
   HelpCircle,
   Highlighter,
@@ -510,10 +508,49 @@ function clearFormattingAndHighlight(editorRef, onContentChange, onBeforeCommand
 
 function insertOrFormatChecklist({ editorRef, onContentChange, onBeforeCommand }) {
   onBeforeCommand?.();
-  editorRef.current?.focus();
   const selection = window.getSelection();
-  const selectedText = selection?.toString() || '';
+  if (!selection || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  const node = container.nodeType === 3 ? container.parentElement : container;
 
+  // 1. If selection/cursor is inside a table cell (td or th)
+  const tableCell = node?.closest('td, th');
+  if (tableCell) {
+    const currentList = node?.closest('ul, ol');
+    if (currentList && tableCell.contains(currentList)) {
+      currentList.setAttribute('data-checklist', 'true');
+      currentList.removeAttribute('data-dash-list');
+      if (currentList.tagName.toLowerCase() !== 'ul') {
+        const ul = document.createElement('ul');
+        ul.setAttribute('data-checklist', 'true');
+        ul.innerHTML = currentList.innerHTML;
+        currentList.replaceWith(ul);
+      }
+      currentList.querySelectorAll('li').forEach(li => {
+        if (!li.querySelector('input[type="checkbox"]')) {
+          const text = li.innerHTML;
+          li.innerHTML = `<label contenteditable="false"><input type="checkbox" aria-label="Checklist item"></label><span>${text}</span>`;
+        }
+      });
+      const firstSpan = currentList.querySelector('li span') || currentList.querySelector('li');
+      if (firstSpan) placeCaretAtStart(firstSpan);
+    } else {
+      const cellText = tableCell.innerText.replace(/\u00a0/g, ' ').trim();
+      const lines = cellText ? cellText.split(/\r?\n/).map(l => l.trim()).filter(Boolean) : [];
+      const itemsHtml = (lines.length > 0 ? lines : ['']).map(line =>
+        `<li><label contenteditable="false"><input type="checkbox" aria-label="Checklist item"></label><span>${escapeHtml(line) || '<br>'}</span></li>`
+      ).join('');
+      tableCell.innerHTML = `<ul data-checklist="true">${itemsHtml}</ul>`;
+      const firstSpan = tableCell.querySelector('ul[data-checklist] li span');
+      if (firstSpan) placeCaretAtStart(firstSpan);
+    }
+    onContentChange?.();
+    return;
+  }
+
+  // 2. If multiple lines selected in regular text
+  const selectedText = selection?.toString() || '';
   if (selectedText.trim()) {
     const lines = selectedText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (lines.length > 0) {
@@ -527,11 +564,11 @@ function insertOrFormatChecklist({ editorRef, onContentChange, onBeforeCommand }
     }
   }
 
-  const node = selection?.anchorNode?.nodeType === 3 ? selection.anchorNode.parentElement : selection?.anchorNode;
-  const currentBlock = node?.closest?.('p, div, h1, h2, h3, h4, blockquote');
+  // 3. If cursor is on an existing block in regular text
+  const currentBlock = node?.closest?.('p, h1, h2, h3, h4, blockquote');
   const currentBlockText = currentBlock && currentBlock !== editorRef.current ? currentBlock.innerText.replace(/\u00a0/g, '').trim() : '';
 
-  if (currentBlock && currentBlock !== editorRef.current && currentBlockText && !currentBlock.closest('ul[data-checklist]')) {
+  if (currentBlock && currentBlock !== editorRef.current && currentBlockText && !currentBlock.closest('ul[data-checklist]') && !currentBlock.closest('.note-table-wrapper')) {
     const lines = currentBlock.innerText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const itemsHtml = (lines.length > 0 ? lines : [currentBlockText]).map(line =>
       `<li><label contenteditable="false"><input type="checkbox" aria-label="Checklist item"></label><span>${escapeHtml(line)}</span></li>`
@@ -545,6 +582,7 @@ function insertOrFormatChecklist({ editorRef, onContentChange, onBeforeCommand }
     return;
   }
 
+  // 4. Default insert empty checklist item
   const marker = `check-${Date.now()}`;
   exec('insertHTML', `<ul data-checklist="true"><li><label contenteditable="false"><input type="checkbox" aria-label="Checklist item"></label><span data-caret="${marker}"><br></span></li></ul>`);
   const target = editorRef.current?.querySelector(`[data-caret="${marker}"]`);
@@ -553,6 +591,155 @@ function insertOrFormatChecklist({ editorRef, onContentChange, onBeforeCommand }
     placeCaret(target);
   }
   onContentChange?.();
+}
+
+function formatList(editorRef, type, onContentChange, onBeforeCommand) {
+  onBeforeCommand?.();
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  const container = range.commonAncestorContainer;
+  const node = container.nodeType === 3 ? container.parentElement : container;
+  const tableCell = node?.closest('td, th');
+  const currentList = node?.closest('ul, ol');
+  const currentLi = node?.closest('li');
+
+  if (type === 'none') {
+    if (currentLi) {
+      extractListItemAsBlock(currentLi, 'p');
+    } else if (tableCell) {
+      const list = tableCell.querySelector('ul, ol');
+      if (list) {
+        const text = Array.from(list.querySelectorAll('li')).map(li => {
+          const clone = li.cloneNode(true);
+          clone.querySelector('label')?.remove();
+          return clone.innerText.trim();
+        }).filter(Boolean).join('<br>');
+        tableCell.innerHTML = text || '<br>';
+        placeCaretAtStart(tableCell);
+      }
+    } else {
+      setBlockFormat(editorRef, 'p', onContentChange, onBeforeCommand);
+    }
+    onContentChange?.();
+    return;
+  }
+
+  if (type === 'bullet') {
+    if (currentList && (tableCell ? tableCell.contains(currentList) : true)) {
+      currentList.removeAttribute('data-checklist');
+      currentList.removeAttribute('data-dash-list');
+      if (currentList.tagName.toLowerCase() !== 'ul') {
+        const ul = document.createElement('ul');
+        ul.innerHTML = currentList.innerHTML;
+        currentList.replaceWith(ul);
+      }
+      currentList.querySelectorAll('label, input[type="checkbox"]').forEach(el => el.remove());
+    } else if (tableCell) {
+      const lines = tableCell.innerText.replace(/\u00a0/g, ' ').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const itemsHtml = (lines.length > 0 ? lines : ['']).map(line => `<li>${escapeHtml(line) || '<br>'}</li>`).join('');
+      tableCell.innerHTML = `<ul>${itemsHtml}</ul>`;
+      const firstLi = tableCell.querySelector('li');
+      if (firstLi) placeCaretAtStart(firstLi);
+    } else {
+      exec('insertUnorderedList');
+    }
+    onContentChange?.();
+    return;
+  }
+
+  if (type === 'dash') {
+    if (currentList && (tableCell ? tableCell.contains(currentList) : true)) {
+      currentList.removeAttribute('data-checklist');
+      currentList.setAttribute('data-dash-list', 'true');
+      if (currentList.tagName.toLowerCase() !== 'ul') {
+        const ul = document.createElement('ul');
+        ul.setAttribute('data-dash-list', 'true');
+        ul.innerHTML = currentList.innerHTML;
+        currentList.replaceWith(ul);
+      }
+      currentList.querySelectorAll('label, input[type="checkbox"]').forEach(el => el.remove());
+    } else if (tableCell) {
+      const lines = tableCell.innerText.replace(/\u00a0/g, ' ').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const itemsHtml = (lines.length > 0 ? lines : ['']).map(line => `<li>${escapeHtml(line) || '<br>'}</li>`).join('');
+      tableCell.innerHTML = `<ul data-dash-list="true">${itemsHtml}</ul>`;
+      const firstLi = tableCell.querySelector('li');
+      if (firstLi) placeCaretAtStart(firstLi);
+    } else {
+      const block = node?.closest('p, h1, h2, h3, h4');
+      const text = block ? block.innerHTML : (range.toString() || '<br>');
+      const ul = document.createElement('ul');
+      ul.setAttribute('data-dash-list', 'true');
+      const li = document.createElement('li');
+      li.innerHTML = text || '<br>';
+      ul.appendChild(li);
+      if (block && editorRef.current?.contains(block)) {
+        block.replaceWith(ul);
+      } else {
+        exec('insertHTML', ul.outerHTML);
+      }
+      placeCaretAtStart(li);
+    }
+    onContentChange?.();
+    return;
+  }
+
+  if (type === 'number') {
+    if (currentList && (tableCell ? tableCell.contains(currentList) : true)) {
+      currentList.removeAttribute('data-checklist');
+      currentList.removeAttribute('data-dash-list');
+      if (currentList.tagName.toLowerCase() !== 'ol') {
+        const ol = document.createElement('ol');
+        ol.innerHTML = currentList.innerHTML;
+        currentList.replaceWith(ol);
+      }
+      currentList.querySelectorAll('label, input[type="checkbox"]').forEach(el => el.remove());
+    } else if (tableCell) {
+      const lines = tableCell.innerText.replace(/\u00a0/g, ' ').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const itemsHtml = (lines.length > 0 ? lines : ['']).map(line => `<li>${escapeHtml(line) || '<br>'}</li>`).join('');
+      tableCell.innerHTML = `<ol>${itemsHtml}</ol>`;
+      const firstLi = tableCell.querySelector('li');
+      if (firstLi) placeCaretAtStart(firstLi);
+    } else {
+      exec('insertOrderedList');
+    }
+    onContentChange?.();
+    return;
+  }
+}
+
+function indentListItem(li) {
+  if (!li) return;
+  const prevLi = li.previousElementSibling;
+  if (!prevLi) return;
+  const isChecklist = li.closest('ul[data-checklist]');
+  const isDash = li.closest('ul[data-dash-list]');
+  const isOrdered = li.closest('ol');
+  const tag = isOrdered ? 'ol' : 'ul';
+  let nestedList = prevLi.querySelector(`:scope > ${tag}`);
+  if (!nestedList) {
+    nestedList = document.createElement(tag);
+    if (isChecklist) nestedList.setAttribute('data-checklist', 'true');
+    if (isDash) nestedList.setAttribute('data-dash-list', 'true');
+    prevLi.appendChild(nestedList);
+  }
+  nestedList.appendChild(li);
+  const target = li.querySelector('span') || li;
+  placeCaretAtStart(target);
+}
+
+function outdentListItem(li) {
+  if (!li) return;
+  const parentList = li.parentElement;
+  const parentLi = parentList?.closest('li');
+  if (parentLi) {
+    parentLi.after(li);
+    if (parentList.children.length === 0) parentList.remove();
+    const target = li.querySelector('span') || li;
+    placeCaretAtStart(target);
+  } else {
+    extractListItemAsBlock(li, 'p');
+  }
 }
 
 function applyAlignment({ align, editorRef, onContentChange, onBeforeCommand, tableOverlay }) {
@@ -890,7 +1077,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
   const openAbove = position.top > 220;
 
   return (
-    <div
+    <ViewportPanel
       ref={toolbarRef}
       className="fixed z-[110] flex items-center gap-0.5 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95 transition-all text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-100"
       style={{
@@ -936,7 +1123,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
             </button>
 
             {headingOpen && (
-              <div
+              <ViewportPanel
                 className={`absolute left-0 ${openAbove ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-20 w-36 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-slate-700 dark:bg-slate-900`}
                 onMouseDown={(e) => e.preventDefault()}
               >
@@ -954,7 +1141,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
                     <span className="text-[10px] text-slate-400">{shortcut}</span>
                   </button>
                 ))}
-              </div>
+              </ViewportPanel>
             )}
           </div>
         </>
@@ -1019,17 +1206,15 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
       >
         <ListOrdered className="h-3.5 w-3.5" />
       </button>
-      {!isInsideTable && (
-        <button
-          type="button"
-          title={isNl ? 'Checklist (⇧⌘L)' : 'Checklist (⇧⌘L)'}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={handleChecklist}
-          className="rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
-        >
-          <CheckSquare className="h-3.5 w-3.5" />
-        </button>
-      )}
+      <button
+        type="button"
+        title={isNl ? 'Checklist (⇧⌘L)' : 'Checklist (⇧⌘L)'}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={handleChecklist}
+        className="rounded-lg p-1.5 hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
+      >
+        <CheckSquare className="h-3.5 w-3.5" />
+      </button>
 
       {/* Hide Quote, Code, Link if inside a table cell */}
       {!isInsideTable && (
@@ -1083,7 +1268,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
             </button>
 
             {linkOpen && (
-              <div
+              <ViewportPanel
                 className={`absolute right-0 ${openAbove ? 'bottom-full mb-2' : 'top-full mt-2'} z-30 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900 text-left`}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
@@ -1134,7 +1319,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
                     {isNl ? 'Link invoegen' : 'Insert link'}
                   </button>
                 </div>
-              </div>
+              </ViewportPanel>
             )}
           </div>
         </>
@@ -1160,7 +1345,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
         </button>
 
         {alignOpen && (
-          <div
+          <ViewportPanel
             className={`absolute right-0 ${openAbove ? 'bottom-full mb-2' : 'top-full mt-2'} z-20 w-48 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900 text-left`}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -1179,7 +1364,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
                 {shortcut && <span className="text-[10px] text-slate-400 font-mono">{shortcut}</span>}
               </button>
             ))}
-          </div>
+          </ViewportPanel>
         )}
       </div>
 
@@ -1203,7 +1388,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
         </button>
 
         {highlightOpen && (
-          <div
+          <ViewportPanel
             className={`absolute right-0 ${openAbove ? 'bottom-full mb-2' : 'top-full mt-2'} z-20 flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900`}
             onMouseDown={(e) => e.preventDefault()}
           >
@@ -1235,10 +1420,10 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
                 style={{ background: color }}
               />
             ))}
-          </div>
+          </ViewportPanel>
         )}
       </div>
-    </div>
+    </ViewportPanel>
   );
 }
 
@@ -1246,15 +1431,19 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
   const [highlights, setHighlights] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [alignOpen, setAlignOpen] = useState(false);
+  const [headingOpen, setHeadingOpen] = useState(false);
+  const [listOpen, setListOpen] = useState(false);
   const [linkName, setLinkName] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const highlightsRef = useRef(null);
   const linkRef = useRef(null);
   const alignRef = useRef(null);
+  const headingRef = useRef(null);
+  const listRef = useRef(null);
   const isNl = lang === 'nl';
 
   useEffect(() => {
-    if (!highlights && !linkOpen && !alignOpen) return;
+    if (!highlights && !linkOpen && !alignOpen && !headingOpen && !listOpen) return;
     const handleOutsideClick = (e) => {
       if (highlights && highlightsRef.current && !highlightsRef.current.contains(e.target)) {
         setHighlights(false);
@@ -1265,10 +1454,16 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
       if (alignOpen && alignRef.current && !alignRef.current.contains(e.target)) {
         setAlignOpen(false);
       }
+      if (headingOpen && headingRef.current && !headingRef.current.contains(e.target)) {
+        setHeadingOpen(false);
+      }
+      if (listOpen && listRef.current && !listRef.current.contains(e.target)) {
+        setListOpen(false);
+      }
     };
     document.addEventListener('pointerdown', handleOutsideClick);
     return () => document.removeEventListener('pointerdown', handleOutsideClick);
-  }, [highlights, linkOpen, alignOpen]);
+  }, [highlights, linkOpen, alignOpen, headingOpen, listOpen]);
 
   const alignmentOptions = isNl ? [
     { id: 'left', label: 'Lijn links uit', shortcut: '⌘{', icon: AlignLeft },
@@ -1367,29 +1562,184 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
     reader.readAsDataURL(file);
   };
 
-  const controls = [
-    [Eraser, isNl ? 'Opmaak & markering wissen' : 'Remove formatting & highlight', () => clearFormattingAndHighlight(editorRef, onContentChange, onBeforeCommand)],
-    [Heading1, isNl ? 'Titel / Kop 1 (⇧⌘T / ⇧⌘H)' : 'Title / Heading 1 (⇧⌘T / ⇧⌘H)', () => setBlockFormat(editorRef, 'h1', onContentChange, onBeforeCommand)],
-    [Heading2, isNl ? 'Subkop (⇧⌘J)' : 'Subheading (⇧⌘J)', () => setBlockFormat(editorRef, 'h2', onContentChange, onBeforeCommand)],
-    [Heading3, isNl ? 'Kop 3 (⇧⌘I)' : 'Heading 3 (⇧⌘I)', () => setBlockFormat(editorRef, 'h3', onContentChange, onBeforeCommand)],
-    [Bold, 'Bold (⌘B)', () => run('bold')],
-    [Italic, 'Italic (⌘I)', () => run('italic')],
-    [Underline, 'Underline (⌘U)', () => run('underline')],
-    [Strikethrough, 'Strikethrough', () => run('strikeThrough')],
-    [List, isNl ? 'Opsommingstekenslijst (⇧⌘7)' : 'Bullet list (⇧⌘7)', () => run('insertUnorderedList')],
-    [ListOrdered, isNl ? 'Genummerde lijst (⇧⌘9)' : 'Numbered list (⇧⌘9)', () => run('insertOrderedList')],
-    [CheckSquare, isNl ? 'Checklist (⇧⌘L)' : 'Checklist (⇧⌘L)', insertChecklist],
-    [Quote, isNl ? 'Blokcitaat (⌥⌘\')' : 'Quote (⌥⌘\')', () => toggleQuote(editorRef, onContentChange, onBeforeCommand)],
-    [Code2, isNl ? 'Codeblok (⇧⌘M)' : 'Code box (⇧⌘M)', insertCode],
-    [Table, isNl ? 'Tabel invoegen' : 'Insert table', insertTable],
-  ];
   return (
-    <div className="relative flex flex-wrap items-center gap-1 border-b p-2 dark:border-slate-800">
-      {controls.map(([Icon, label, action]) => (
-        <button key={label} type="button" title={label} onMouseDown={e => e.preventDefault()} onClick={action} className="rounded p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200">
-          <Icon className="h-4 w-4" />
+    <div className="relative flex items-center gap-1 border-b p-2 overflow-x-auto overflow-y-hidden flex-nowrap scrollbar-none max-w-full dark:border-slate-800 shrink-0">
+      {/* Heading options dropdown */}
+      <div className="relative shrink-0" ref={headingRef}>
+        <button
+          type="button"
+          title={isNl ? 'Kopteksten / Titel' : 'Headings / Title'}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => {
+            setHeadingOpen(v => !v);
+            setListOpen(false);
+            setLinkOpen(false);
+            setHighlights(false);
+            setAlignOpen(false);
+          }}
+          className={`flex items-center gap-1 rounded px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white transition-colors shrink-0 ${headingOpen ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : ''}`}
+        >
+          <span>Aa</span>
+          <ChevronDown className="h-3 w-3 opacity-60" />
         </button>
-      ))}
+
+        {headingOpen && (
+          <ViewportPanel className="absolute left-0 top-full mt-1.5 z-40 w-44 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => { setBlockFormat(editorRef, 'title', onContentChange, onBeforeCommand); setHeadingOpen(false); }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm font-extrabold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <span>{isNl ? 'Titel' : 'Title'}</span>
+              <span className="text-[10px] text-slate-400 font-normal">⇧⌘T</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBlockFormat(editorRef, 'h1', onContentChange, onBeforeCommand); setHeadingOpen(false); }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-sm font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <span>Heading 1</span>
+              <span className="text-[10px] text-slate-400 font-normal">⇧⌘H</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBlockFormat(editorRef, 'h2', onContentChange, onBeforeCommand); setHeadingOpen(false); }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-900 dark:text-white"
+            >
+              <span>Heading 2</span>
+              <span className="text-[10px] text-slate-400 font-normal">⇧⌘J</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setBlockFormat(editorRef, 'h3', onContentChange, onBeforeCommand); setHeadingOpen(false); }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200"
+            >
+              <span>Heading 3</span>
+              <span className="text-[10px] text-slate-400 font-normal">⇧⌘I</span>
+            </button>
+            <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
+            <button
+              type="button"
+              onClick={() => { setBlockFormat(editorRef, 'p', onContentChange, onBeforeCommand); setHeadingOpen(false); }}
+              className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs font-normal hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            >
+              <span>{isNl ? 'Body' : 'Body'}</span>
+              <span className="text-[10px] text-slate-400 font-normal">⇧⌘B</span>
+            </button>
+          </ViewportPanel>
+        )}
+      </div>
+
+      <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0 mx-0.5" />
+
+      {/* Formatting controls */}
+      <button type="button" title="Bold (⌘B)" onMouseDown={e => e.preventDefault()} onClick={() => run('bold')} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Bold className="h-4 w-4" />
+      </button>
+      <button type="button" title="Italic (⌘I)" onMouseDown={e => e.preventDefault()} onClick={() => run('italic')} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Italic className="h-4 w-4" />
+      </button>
+      <button type="button" title="Underline (⌘U)" onMouseDown={e => e.preventDefault()} onClick={() => run('underline')} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Underline className="h-4 w-4" />
+      </button>
+      <button type="button" title="Strikethrough" onMouseDown={e => e.preventDefault()} onClick={() => run('strikeThrough')} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Strikethrough className="h-4 w-4" />
+      </button>
+
+      <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0 mx-0.5" />
+
+      {/* List dropdown: Geen, Bullet, Gestreept, Genummerd */}
+      <div className="relative shrink-0" ref={listRef}>
+        <button
+          type="button"
+          title={isNl ? 'Lijstopties' : 'List options'}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => {
+            setListOpen(v => !v);
+            setHeadingOpen(false);
+            setLinkOpen(false);
+            setHighlights(false);
+            setAlignOpen(false);
+          }}
+          className={`flex items-center gap-1 rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0 ${listOpen ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : ''}`}
+        >
+          <List className="h-4 w-4" />
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
+
+        {listOpen && (
+          <ViewportPanel className="absolute left-0 top-full mt-1.5 z-40 w-44 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => { formatList(editorRef, 'none', onContentChange, onBeforeCommand); setListOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            >
+              <span className="w-4 text-center font-bold text-slate-400">—</span>
+              <span>{isNl ? 'Geen' : 'None'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { formatList(editorRef, 'bullet', onContentChange, onBeforeCommand); setListOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            >
+              <span className="w-4 text-center text-sm font-bold leading-none">•</span>
+              <span>{isNl ? 'Bullet' : 'Bullet'}</span>
+              <span className="ml-auto text-[10px] text-slate-400 font-normal">⇧⌘7</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { formatList(editorRef, 'dash', onContentChange, onBeforeCommand); setListOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            >
+              <span className="w-4 text-center font-bold text-slate-700 dark:text-slate-200">–</span>
+              <span>{isNl ? 'Gestreept' : 'Dashed'}</span>
+              <span className="ml-auto text-[10px] text-slate-400 font-normal">- space</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { formatList(editorRef, 'number', onContentChange, onBeforeCommand); setListOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300"
+            >
+              <span className="w-4 text-center font-bold text-xs">1.</span>
+              <span>{isNl ? 'Genummerd' : 'Numbered'}</span>
+              <span className="ml-auto text-[10px] text-slate-400 font-normal">⇧⌘9</span>
+            </button>
+          </ViewportPanel>
+        )}
+      </div>
+
+      {/* Checklist standalone button */}
+      <button
+        type="button"
+        title={isNl ? 'Checklist (⇧⌘L)' : 'Checklist (⇧⌘L)'}
+        onMouseDown={e => e.preventDefault()}
+        onClick={insertChecklist}
+        className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0"
+      >
+        <CheckSquare className="h-4 w-4" />
+      </button>
+
+      <div className="h-4 w-px bg-slate-200 dark:bg-slate-700 shrink-0 mx-0.5" />
+
+      {/* Quote */}
+      <button type="button" title={isNl ? 'Blokcitaat (⌥⌘\')' : 'Quote (⌥⌘\')'} onMouseDown={e => e.preventDefault()} onClick={() => toggleQuote(editorRef, onContentChange, onBeforeCommand)} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Quote className="h-4 w-4" />
+      </button>
+
+      {/* Code */}
+      <button type="button" title={isNl ? 'Codeblok (⇧⌘M)' : 'Code box (⇧⌘M)'} onMouseDown={e => e.preventDefault()} onClick={insertCode} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Code2 className="h-4 w-4" />
+      </button>
+
+      {/* Table */}
+      <button type="button" title={isNl ? 'Tabel invoegen' : 'Insert table'} onMouseDown={e => e.preventDefault()} onClick={insertTable} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Table className="h-4 w-4" />
+      </button>
+
+      {/* Eraser / Clear format */}
+      <button type="button" title={isNl ? 'Opmaak & markering wissen' : 'Remove formatting & highlight'} onMouseDown={e => e.preventDefault()} onClick={() => clearFormattingAndHighlight(editorRef, onContentChange, onBeforeCommand)} className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0">
+        <Eraser className="h-4 w-4" />
+      </button>
 
       {/* Image Upload Button */}
       <button
@@ -1397,7 +1747,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
         title={isNl ? 'Afbeelding toevoegen' : 'Insert image'}
         onMouseDown={e => e.preventDefault()}
         onClick={() => imageInputRef.current?.click()}
-        className="rounded p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+        className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0"
       >
         <ImageIcon className="h-4 w-4" />
       </button>
@@ -1430,7 +1780,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
         </button>
 
         {linkOpen && (
-          <div className="absolute left-0 top-full mt-1.5 z-40 w-72 rounded-xl border bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <ViewportPanel className="absolute left-0 top-full mt-1.5 z-40 w-72 rounded-xl border bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900">
             <label className="text-xs text-slate-500">{isNl ? 'Link tekst' : 'Link text'}
               <input className={`${fieldClass} mt-1 w-full`} value={linkName} onChange={e => setLinkName(e.target.value)} />
             </label>
@@ -1452,7 +1802,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
               <button className={secondaryButton} onClick={() => setLinkOpen(false)}>{isNl ? 'Annuleren' : 'Cancel'}</button>
               <button className={primaryButton} disabled={!linkName.trim() || !linkUrl.trim()} onClick={addLink}>{isNl ? 'Invoegen' : 'Insert link'}</button>
             </div>
-          </div>
+          </ViewportPanel>
         )}
       </div>
 
@@ -1473,7 +1823,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
         </button>
 
         {alignOpen && (
-          <div
+          <ViewportPanel
             className="absolute left-0 top-full mt-1.5 z-40 w-48 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-xl dark:border-slate-700 dark:bg-slate-900"
             onMouseDown={e => e.preventDefault()}
           >
@@ -1504,7 +1854,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
                 {shortcut && <span className="text-[10px] text-slate-400 font-mono">{shortcut}</span>}
               </button>
             ))}
-          </div>
+          </ViewportPanel>
         )}
       </div>
 
@@ -1524,7 +1874,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
         </button>
 
         {highlights && (
-          <div className="absolute left-0 top-full mt-1.5 z-40 flex items-center gap-1 rounded-xl border bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+          <ViewportPanel className="absolute left-0 top-full mt-1.5 z-40 flex items-center gap-1 rounded-xl border bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
             <button
               type="button"
               title={isNl ? 'Markering verwijderen' : 'Remove highlight'}
@@ -1540,7 +1890,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
             {PALETTE.slice(0, 6).map(color => (
               <button key={color} onMouseDown={e => e.preventDefault()} onClick={() => { run('hiliteColor', `${color}55`); setHighlights(false); }} className="h-6 w-7 rounded shrink-0 shadow-xs border border-black/10" style={{ background: color }} />
             ))}
-          </div>
+          </ViewportPanel>
         )}
       </div>
 
@@ -1877,7 +2227,7 @@ function IconColorPopover({ popover, isNl, onClose, onSave }) {
   };
 
   return (
-    <div
+    <ViewportPanel
       ref={popoverRef}
       className="fixed z-[140] w-72 max-h-[calc(100vh-20px)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3.5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in fade-in zoom-in-95 duration-100"
       style={{ top, left }}
@@ -2046,7 +2396,7 @@ function IconColorPopover({ popover, isNl, onClose, onSave }) {
 
       {/* Context Menu for SVG deletion */}
       {svgContextMenu && (
-        <div
+        <ViewportPanel
           ref={svgMenuRef}
           className="fixed z-[160] rounded-xl border border-slate-200 bg-white p-1 shadow-2xl dark:border-slate-700 dark:bg-slate-900 text-xs"
           style={{ left: svgContextMenu.x, top: svgContextMenu.y }}
@@ -2065,12 +2415,12 @@ function IconColorPopover({ popover, isNl, onClose, onSave }) {
             <Trash2 className="h-3.5 w-3.5 shrink-0" />
             <span>{isNl ? 'Verwijder SVG' : 'Delete SVG'}</span>
           </button>
-        </div>
+        </ViewportPanel>
       )}
 
       {/* Context Menu for Saved Color deletion */}
       {colorContextMenu && (
-        <div
+        <ViewportPanel
           ref={colorMenuRef}
           className="fixed z-[160] rounded-xl border border-slate-200 bg-white p-1 shadow-2xl dark:border-slate-700 dark:bg-slate-900 text-xs"
           style={{ left: colorContextMenu.x, top: colorContextMenu.y }}
@@ -2089,9 +2439,9 @@ function IconColorPopover({ popover, isNl, onClose, onSave }) {
             <Trash2 className="h-3.5 w-3.5 shrink-0" />
             <span>{isNl ? 'Verwijder kleur' : 'Delete color'}</span>
           </button>
-        </div>
+        </ViewportPanel>
       )}
-    </div>
+    </ViewportPanel>
   );
 }
 
@@ -2130,7 +2480,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
   ];
 
   return (
-    <div
+    <ViewportPanel
       ref={menuRef}
       className="fixed z-[140] w-64 rounded-xl border border-slate-200 bg-white p-1.5 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
       style={{ left: menu.x, top: menu.y }}
@@ -2175,7 +2525,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
           </button>
 
           {contextSubmenu === 'export' && (
-            <div className="absolute left-full top-0 ml-1.5 w-44 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50">
+            <ViewportPanel className="absolute left-full top-0 ml-1.5 w-44 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50">
               <button
                 type="button"
                 onClick={() => {
@@ -2198,7 +2548,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
                 <Download className="h-3.5 w-3.5 text-slate-400" />
                 <span>PDF (.pdf)</span>
               </button>
-            </div>
+            </ViewportPanel>
           )}
         </div>
       )}
@@ -2223,7 +2573,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
         </button>
 
         {contextSubmenu === 'move' && (
-          <div className="absolute left-full top-0 ml-1.5 w-56 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50">
+          <ViewportPanel className="absolute left-full top-0 ml-1.5 w-56 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50">
             <p className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">{isNl ? 'Verplaats naar' : 'Move to'}</p>
             <div className="my-1 h-px bg-slate-100 dark:bg-slate-800" />
             <button
@@ -2251,7 +2601,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
                 <span className="truncate">{f.name}</span>
               </button>
             ))}
-          </div>
+          </ViewportPanel>
         )}
       </div>
 
@@ -2267,7 +2617,7 @@ function ContextMenu({ menu, folders, onClose, onAction, isNl }) {
         <Trash2 className="h-3.5 w-3.5 text-rose-500 shrink-0" />
         <span>{isNl ? 'Verwijderen' : 'Delete'}</span>
       </button>
-    </div>
+    </ViewportPanel>
   );
 }
 
@@ -2321,9 +2671,17 @@ export default function NotesTool({ settings, historyData }) {
   const [imageMenu, setImageMenu] = useState(null); // { x, y, imgEl, wrapperEl, currentSize }
   const [tableOverlay, setTableOverlay] = useState(null); // { table, row, cell, rowIndex, colIndex, rowMenuOpen, colMenuOpen, rowTop, rowLeft, colTop, colLeft }
   const [copiedTableData, setCopiedTableData] = useState(null); // { type: 'row' | 'col', data: [] }
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
   const columnResizeRef = useRef(null);
   const columnMenuRef = useRef(null);
   const headerMenuRef = useRef(null);
+  const touchStartRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const editorRef = useRef(null);
   const tableDragRef = useRef(null);
@@ -2942,12 +3300,16 @@ export default function NotesTool({ settings, historyData }) {
         setBlockFormat(editorRef, 'p', saveContent, () => commitHistory('command'));
         break;
       case 'bullet':
-        exec('insertUnorderedList');
-        saveContent(format);
+        formatList(editorRef, 'bullet', saveContent, () => commitHistory('command'));
+        break;
+      case 'dash':
+        formatList(editorRef, 'dash', saveContent, () => commitHistory('command'));
         break;
       case 'number':
-        exec('insertOrderedList');
-        saveContent(format);
+        formatList(editorRef, 'number', saveContent, () => commitHistory('command'));
+        break;
+      case 'none':
+        formatList(editorRef, 'none', saveContent, () => commitHistory('command'));
         break;
       case 'checklist':
         insertOrFormatChecklist({ editorRef, onContentChange: saveContent, onBeforeCommand: () => commitHistory('command') });
@@ -3323,8 +3685,9 @@ export default function NotesTool({ settings, historyData }) {
       }
     }
 
-    // Table cell Tab and Enter navigation
-    const tableCell = node?.closest?.('td, th');
+    // Table cell Tab and Enter navigation (when not inside a list item)
+    const inList = Boolean(node?.closest?.('li'));
+    const tableCell = !inList ? node?.closest?.('td, th') : null;
     if (tableCell) {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -3635,17 +3998,36 @@ export default function NotesTool({ settings, historyData }) {
 
     const markerBlock = node?.closest?.('p,div');
     const marker = markerBlock?.textContent.replace(/\u00a0/g, '').trim();
-    if (e.key === ' ' && (marker === '*' || marker === '1.')) {
-      e.preventDefault();
-      checkpointHistory();
-      const range = document.createRange();
-      range.selectNodeContents(markerBlock);
-      selection.removeAllRanges();
-      selection.addRange(range);
-      exec('delete');
-      exec(marker === '*' ? 'insertUnorderedList' : 'insertOrderedList');
-      saveContent('list-shortcut');
-      return;
+    if (e.key === ' ') {
+      if (marker === '*' || marker === '1.') {
+        e.preventDefault();
+        checkpointHistory();
+        const range = document.createRange();
+        range.selectNodeContents(markerBlock);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        exec('delete');
+        exec(marker === '*' ? 'insertUnorderedList' : 'insertOrderedList');
+        saveContent('list-shortcut');
+        return;
+      }
+      if (marker === '-' || marker === '–') {
+        e.preventDefault();
+        checkpointHistory();
+        const ul = document.createElement('ul');
+        ul.setAttribute('data-dash-list', 'true');
+        const li = document.createElement('li');
+        li.innerHTML = '<br>';
+        ul.appendChild(li);
+        if (markerBlock && editorRef.current?.contains(markerBlock)) {
+          markerBlock.replaceWith(ul);
+        } else {
+          exec('insertHTML', ul.outerHTML);
+        }
+        placeCaretAtStart(li);
+        saveContent('list-shortcut-dash');
+        return;
+      }
     }
 
     // Checklist Enter handler
@@ -4520,7 +4902,7 @@ export default function NotesTool({ settings, historyData }) {
             ? 'bg-slate-100 dark:bg-slate-800 font-medium'
             : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/60'
         }`}
-        style={{ paddingLeft: 10 + depth * 12 }}
+        style={{ paddingLeft: depth === 0 ? 10 : 38 + (depth - 1) * 16 }}
       >
         <button
           type="button"
@@ -4811,10 +5193,13 @@ export default function NotesTool({ settings, historyData }) {
         {/* Library Header Bar */}
         <div className="flex items-center justify-between border-b px-4 py-3 dark:border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            {gridFolderId && (
+            {(gridFolderId || isMobile) && (
               <button
                 type="button"
-                onClick={() => setGridFolderId(null)}
+                onClick={() => {
+                  if (gridFolderId) setGridFolderId(null);
+                  else setViewMode('library');
+                }}
                 className="flex items-center gap-1 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:text-white px-2.5 py-1.5 rounded-lg border border-slate-200/60 dark:border-slate-700 transition-colors"
                 title={isNl ? 'Terug naar Bibliotheek' : 'Back to Library'}
               >
@@ -4896,7 +5281,7 @@ export default function NotesTool({ settings, historyData }) {
                 </button>
 
                 {showColumnMenu && (
-                  <div
+                  <ViewportPanel
                     className="absolute left-0 top-full mt-1.5 z-40 w-56 rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                     onClick={e => e.stopPropagation()}
                   >
@@ -4922,7 +5307,7 @@ export default function NotesTool({ settings, historyData }) {
                         </label>
                       ))}
                     </div>
-                  </div>
+                  </ViewportPanel>
                 )}
               </div>
             )}
@@ -5149,10 +5534,52 @@ export default function NotesTool({ settings, historyData }) {
     );
   };
 
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      touchStartRef.current = {
+        x: touch.clientX,
+        y: touch.clientY,
+        target: e.target,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (!touchStartRef.current || e.changedTouches.length === 0) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    const dt = Date.now() - touchStartRef.current.time;
+    const target = touchStartRef.current.target;
+    touchStartRef.current = null;
+
+    // Must be predominantly horizontal and quick swipe
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 600) {
+      const li = target?.closest('li');
+      if (li && editorRef.current?.contains(li)) {
+        e.preventDefault();
+        checkpointHistory();
+        if (dx > 0) {
+          indentListItem(li);
+          saveContent('swipe-indent');
+        } else {
+          outdentListItem(li);
+          saveContent('swipe-outdent');
+        }
+      }
+    }
+  };
+
   return (
     <ToolShell icon={NotebookPen} title="Notes" description="Write, format and organize reusable lab notes.">
-      <div className={`grid h-[calc(100vh-140px)] max-h-[calc(100vh-140px)] overflow-hidden rounded-xl border border-slate-200 bg-white transition-all dark:border-slate-800 dark:bg-slate-900 ${collapsed ? 'grid-cols-[52px_1fr]' : 'grid-cols-[280px_1fr]'}`}>
-        <aside className="flex flex-col justify-between h-full overflow-hidden border-r dark:border-slate-800">
+      <div className={`grid h-[calc(100vh-140px)] max-h-[calc(100vh-140px)] overflow-hidden rounded-xl border border-slate-200 bg-white transition-all dark:border-slate-800 dark:bg-slate-900 ${
+        isMobile ? 'grid-cols-1' : collapsed ? 'grid-cols-[52px_1fr]' : 'grid-cols-[280px_1fr]'
+      }`}>
+        <aside className={`flex flex-col justify-between h-full overflow-hidden border-r dark:border-slate-800 ${
+          isMobile && (selected || viewMode === 'library-overview') ? 'hidden' : 'flex'
+        }`}>
           <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
             {/* Sidebar Header: Entire header bar is clickable to open Library Overview */}
             <div
@@ -5314,7 +5741,9 @@ export default function NotesTool({ settings, historyData }) {
           )}
         </aside>
 
-        <main className="flex flex-col h-full min-w-0 overflow-hidden relative">
+        <main className={`flex flex-col h-full min-w-0 overflow-hidden relative ${
+          isMobile && !selected && viewMode !== 'library-overview' ? 'hidden' : 'flex'
+        }`}>
           {note ? (
             <>
               {/* Trash Notice Banner */}
@@ -5352,7 +5781,18 @@ export default function NotesTool({ settings, historyData }) {
               )}
 
               {/* Note Header */}
-              <div className="flex items-center gap-3 border-b px-4 py-3 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-2 sm:gap-3 border-b px-3 sm:px-4 py-3 dark:border-slate-800 shrink-0">
+                {isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setSelected(null)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0 mr-0.5"
+                    title={isNl ? 'Terug naar notities' : 'Back to notes'}
+                  >
+                    <ArrowLeft className="h-5 w-5" />
+                  </button>
+                )}
+
                 <button
                   type="button"
                   title={isNl ? 'Icoon & kleur aanpassen' : 'Customize icon & color'}
@@ -5362,13 +5802,13 @@ export default function NotesTool({ settings, historyData }) {
                   }}
                   className="rounded p-0.5 hover:opacity-85 transition-transform hover:scale-105 shrink-0 flex items-center justify-center"
                 >
-                  {renderNoteIcon(note.icon, note.color, "h-8 w-8")}
+                  {renderNoteIcon(note.icon, note.color, "h-7 w-7 sm:h-8 sm:w-8")}
                 </button>
 
                 {/* Title */}
                 <div className="flex items-center min-w-0 flex-1">
                   <input
-                    className="w-full bg-transparent border-0 text-2xl font-extrabold text-slate-900 dark:text-white p-0 m-0 shadow-none outline-none focus:ring-0 focus:outline-none leading-none tracking-tight"
+                    className="w-full bg-transparent border-0 text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white p-0 m-0 shadow-none outline-none focus:ring-0 focus:outline-none leading-none tracking-tight"
                     value={note.title}
                     disabled={Boolean(note.deleted)}
                     placeholder={isNl ? 'Naamloze notitie' : 'Untitled note'}
@@ -5387,8 +5827,8 @@ export default function NotesTool({ settings, historyData }) {
 
                 {!note.deleted && (
                   <div className="flex items-center gap-2 shrink-0">
-                    {/* Last modified date: Last modified: DD-MM-YYYY */}
-                    <span className="text-xs text-slate-400 dark:text-slate-500 shrink-0 select-none mr-1 font-medium">
+                    {/* Last modified date: Hidden on mobile, shown in Note body on mobile */}
+                    <span className="hidden sm:inline text-xs text-slate-400 dark:text-slate-500 shrink-0 select-none mr-1 font-medium">
                       {isNl ? 'Laatst bewerkt:' : 'Last modified:'} {formatHeaderDate(note.updated || note.created)}
                     </span>
 
@@ -5407,7 +5847,7 @@ export default function NotesTool({ settings, historyData }) {
                       </button>
 
                       {headerMenuOpen && (
-                        <div
+                        <ViewportPanel
                           className="absolute right-0 top-full mt-1.5 z-40 w-56 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                           onClick={e => e.stopPropagation()}
                           onMouseLeave={() => setHeaderSubmenu(null)}
@@ -5447,7 +5887,7 @@ export default function NotesTool({ settings, historyData }) {
                             </button>
 
                             {headerSubmenu === 'export' && (
-                              <div
+                              <ViewportPanel
                                 className="absolute right-full top-0 mr-1.5 w-44 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50"
                               >
                                 <button
@@ -5474,7 +5914,7 @@ export default function NotesTool({ settings, historyData }) {
                                   <Download className="h-3.5 w-3.5 text-slate-400" />
                                   <span>PDF (.pdf)</span>
                                 </button>
-                              </div>
+                              </ViewportPanel>
                             )}
                           </div>
 
@@ -5498,7 +5938,7 @@ export default function NotesTool({ settings, historyData }) {
                             </button>
 
                             {headerSubmenu === 'move' && (
-                              <div
+                              <ViewportPanel
                                 className="absolute right-full top-0 mr-1.5 w-48 max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900 z-50"
                               >
                                 <button
@@ -5532,7 +5972,7 @@ export default function NotesTool({ settings, historyData }) {
                                     <span className="truncate">{f.name}</span>
                                   </button>
                                 ))}
-                              </div>
+                              </ViewportPanel>
                             )}
                           </div>
 
@@ -5569,7 +6009,7 @@ export default function NotesTool({ settings, historyData }) {
                             <Trash2 className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                             <span>{isNl ? 'Verwijderen' : 'Delete'}</span>
                           </button>
-                        </div>
+                        </ViewportPanel>
                       )}
                     </div>
                   </div>
@@ -5589,22 +6029,31 @@ export default function NotesTool({ settings, historyData }) {
               )}
 
               {/* Note Body: Scrolls independently */}
-              <div
-                ref={editorRef}
-                contentEditable={!note.deleted}
-                dir="ltr"
-                suppressContentEditableWarning
-                onInput={saveContent}
-                onKeyUp={saveContent}
-                onBlur={saveContent}
-                onKeyDown={handleEditorKeyDown}
-                onPaste={handlePaste}
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-                onBeforeInput={handleBeforeInput}
-                onContextMenu={handleEditorContextMenu}
-                className="note-editor flex-1 overflow-y-auto p-6 text-left text-sm leading-6 text-slate-700 outline-none dark:text-slate-200"
-              />
+              <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+                <div className="flex justify-end px-6 pt-2 pb-0 sm:hidden shrink-0">
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500 font-medium select-none">
+                    {formatHeaderDate(note.updated || note.created)}
+                  </span>
+                </div>
+                <div
+                  ref={editorRef}
+                  contentEditable={!note.deleted}
+                  dir="ltr"
+                  suppressContentEditableWarning
+                  onInput={saveContent}
+                  onKeyUp={saveContent}
+                  onBlur={saveContent}
+                  onKeyDown={handleEditorKeyDown}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={handleTouchEnd}
+                  onPaste={handlePaste}
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onBeforeInput={handleBeforeInput}
+                  onContextMenu={handleEditorContextMenu}
+                  className="note-editor flex-1 overflow-y-auto p-4 sm:p-6 text-left text-sm leading-6 text-slate-700 outline-none dark:text-slate-200"
+                />
+              </div>
             </>
           ) : viewMode === 'trash' ? (
             <div className="flex flex-1 items-center justify-center text-sm text-slate-400">
@@ -5620,7 +6069,7 @@ export default function NotesTool({ settings, historyData }) {
 
       {/* Link Context Menu */}
       {linkMenu && (
-        <div
+        <ViewportPanel
           id="note-link-menu"
           className="fixed z-[160] w-52 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
           style={{ left: linkMenu.x, top: linkMenu.y }}
@@ -5692,12 +6141,12 @@ export default function NotesTool({ settings, historyData }) {
             <Unlink className="h-3.5 w-3.5 text-rose-500 shrink-0" />
             <span>{isNl ? 'Link verwijderen' : 'Remove link'}</span>
           </button>
-        </div>
+        </ViewportPanel>
       )}
 
       {/* Image Context Menu (Apple Notes style 3 sizes: Klein, Middel, Groot) */}
       {imageMenu && (
-        <div
+        <ViewportPanel
           id="note-image-menu"
           className="fixed z-[160] w-52 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
           style={{ left: imageMenu.x, top: imageMenu.y }}
@@ -5798,7 +6247,7 @@ export default function NotesTool({ settings, historyData }) {
             <Trash2 className="h-3.5 w-3.5 text-rose-500 shrink-0" />
             <span>{isNl ? 'Afbeelding verwijderen' : 'Delete image'}</span>
           </button>
-        </div>
+        </ViewportPanel>
       )}
 
       {/* Table Overlay Handles, Selection Frame, and Context Menus */}
@@ -5806,7 +6255,7 @@ export default function NotesTool({ settings, historyData }) {
         <div id="note-table-controls">
           {/* Apple Notes Selection Frame (Amber border with yellow corner handles) */}
           {tableOverlay.selectedType === 'row' && tableOverlay.rowRect && (
-            <div
+            <ViewportPanel
               className="pointer-events-none fixed z-30 rounded-[2px] border-2 border-amber-500 bg-amber-500/10 shadow-xs"
               style={{
                 top: tableOverlay.rowRect.top,
@@ -5819,11 +6268,11 @@ export default function NotesTool({ settings, historyData }) {
               <div className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -left-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
-            </div>
+            </ViewportPanel>
           )}
 
           {tableOverlay.selectedType === 'col' && tableOverlay.tableRect && tableOverlay.colRect && (
-            <div
+            <ViewportPanel
               className="pointer-events-none fixed z-30 rounded-[2px] border-2 border-amber-500 bg-amber-500/10 shadow-xs"
               style={{
                 top: tableOverlay.tableRect.top,
@@ -5836,11 +6285,11 @@ export default function NotesTool({ settings, historyData }) {
               <div className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -left-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
-            </div>
+            </ViewportPanel>
           )}
 
           {tableOverlay.selectedType === 'range' && tableOverlay.selectionRect && (
-            <div
+            <ViewportPanel
               className="pointer-events-none fixed z-30 rounded-[2px] border-2 border-amber-500 bg-amber-500/10 shadow-xs"
               style={{
                 top: tableOverlay.selectionRect.top,
@@ -5853,7 +6302,7 @@ export default function NotesTool({ settings, historyData }) {
               <div className="absolute -right-1 -top-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -left-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
               <div className="absolute -right-1 -bottom-1 h-2 w-2 rounded-full border border-white bg-amber-500 shadow-xs" />
-            </div>
+            </ViewportPanel>
           )}
 
           {/* Row handle (...) */}
@@ -5916,7 +6365,7 @@ export default function NotesTool({ settings, historyData }) {
             }
 
             return (
-              <div
+              <ViewportPanel
                 className="fixed z-[250] w-52 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                 style={{ left: rowMenuLeft, top: rowMenuTop }}
                 onClick={e => e.stopPropagation()}
@@ -6037,7 +6486,7 @@ export default function NotesTool({ settings, historyData }) {
                   <Trash className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                   <span>{isNl ? 'Tabel verwijderen' : 'Delete table'}</span>
                 </button>
-              </div>
+              </ViewportPanel>
             );
           })()}
 
@@ -6055,7 +6504,7 @@ export default function NotesTool({ settings, historyData }) {
             }
 
             return (
-              <div
+              <ViewportPanel
                 className="fixed z-[250] w-52 rounded-xl border border-slate-200 bg-white p-1 text-xs shadow-2xl dark:border-slate-700 dark:bg-slate-900"
                 style={{ left: colMenuLeft, top: colMenuTop }}
                 onClick={e => e.stopPropagation()}
@@ -6185,7 +6634,7 @@ export default function NotesTool({ settings, historyData }) {
                   <Trash className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                   <span>{isNl ? 'Tabel verwijderen' : 'Delete table'}</span>
                 </button>
-              </div>
+              </ViewportPanel>
             );
           })()}
         </div>
