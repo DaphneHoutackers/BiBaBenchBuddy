@@ -766,7 +766,7 @@ function CircularMap({
   sequenceColors = [],
   selectedMapItem,
   selectedRange,
-  rangeColor,
+  _rangeColor,
   onLabelClick,
   onLabelHover,
   onLabelLeave,
