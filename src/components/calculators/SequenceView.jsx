@@ -4,7 +4,7 @@ import MacColorPicker from '@/components/shared/MacColorPicker';
 
 // Change sequence text font here if needed.
 const SEQUENCE_FONT_FAMILY = 'Menlo, "Liberation Mono", Consolas, "Courier New", monospace';
-const DNA_COLOR_PRESETS = ['#111827', '#4a90d9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const DNA_COLOR_PRESETS = ['#111827', '#4a90d9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#06b6d4', '#84cc16'];
 
 const CODON_TABLE = {
   TTT:'F',TTC:'F',TTA:'L',TTG:'L',CTT:'L',CTC:'L',CTA:'L',CTG:'L',
@@ -517,25 +517,62 @@ export default function SequenceView({
                 <Palette className="h-3.5 w-3.5" /> Change DNA color
               </button>
               {showColorTools && (
-                <div className="absolute right-full bottom-0 mr-2 w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl">
-                  <div className="mb-2 grid grid-cols-6 gap-1.5">
+                <div className="absolute right-full bottom-0 mr-2 w-56 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl z-50">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DNA Kleur</span>
+                    <span className="h-3 w-3 rounded-full border border-slate-300 shadow-xs" style={{ backgroundColor: selectionColor || '#111827' }} />
+                  </div>
+                  <div className="mb-2 grid grid-cols-5 gap-1">
                     {DNA_COLOR_PRESETS.map(color => (
                       <button
                         key={color}
+                        type="button"
                         onClick={() => setSelectionColor(color)}
-                        className={`h-6 w-6 rounded-full border ${selectionColor === color ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-slate-200'}`}
+                        className={`h-6 w-6 rounded border ${selectionColor === color ? 'ring-2 ring-teal-500 ring-offset-1 scale-105' : 'border-slate-200'} hover:scale-105 transition-transform flex items-center justify-center`}
                         style={{ backgroundColor: color }}
-                      />
+                        title={color === '#111827' ? 'Default zwart (standaard / reset kleur)' : color}
+                      >
+                        {color === '#111827' && (
+                          <span className="text-[8px] text-slate-300 font-mono font-bold leading-none">def</span>
+                        )}
+                      </button>
                     ))}
                   </div>
-                  <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-medium text-slate-600">
-                    Custom
+                  <div className="mb-2.5 flex items-center justify-between gap-2 text-[11px] font-medium text-slate-600 border-t border-slate-100 pt-1.5">
+                    <span>Custom kleur</span>
                     <MacColorPicker value={selectionColor} onChange={setSelectionColor} swatchClassName="h-5 w-7 rounded" buttonClassName="rounded border border-slate-200 bg-white p-0.5" />
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button onClick={() => { applySequenceColor(1); setSelectionMenu(null); }} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Top</button>
-                    <button onClick={() => { applySequenceColor(-1); setSelectionMenu(null); }} className="rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-200">Bottom</button>
-                    <button onClick={() => { applySequenceColor(0); setSelectionMenu(null); }} className="rounded-md bg-teal-50 px-2 py-1.5 text-[11px] font-medium text-teal-700 hover:bg-teal-100">Both</button>
+                  <div className="border-t border-slate-100 pt-2">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 text-center">Toepassen op streng</p>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => { applySequenceColor(1); setSelectionMenu(null); }}
+                        className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-slate-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 transition-all shadow-xs"
+                        title={"Bovenste streng (5' → 3')"}
+                      >
+                        <span className="text-[11px] font-bold">Top</span>
+                        <span className="text-[9px] text-slate-400">{"5' → 3'"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { applySequenceColor(-1); setSelectionMenu(null); }}
+                        className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-slate-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 transition-all shadow-xs"
+                        title={"Onderste streng (3' ← 5')"}
+                      >
+                        <span className="text-[11px] font-bold">Bottom</span>
+                        <span className="text-[9px] text-slate-400">{"3' ← 5'"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { applySequenceColor(0); setSelectionMenu(null); }}
+                        className="flex flex-col items-center justify-center rounded-lg border border-teal-200 bg-teal-50 px-1 py-1 text-teal-800 hover:bg-teal-100 hover:border-teal-400 transition-all shadow-xs"
+                        title="Beide strengen"
+                      >
+                        <span className="text-[11px] font-bold">Both</span>
+                        <span className="text-[9px] text-teal-600">Beide</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}

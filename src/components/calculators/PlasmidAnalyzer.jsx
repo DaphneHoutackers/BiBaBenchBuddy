@@ -37,7 +37,7 @@ const PRIMER_MIN_ANNEALING = 14;
 const MAP_LABEL_FONT_FAMILY = 'Verdana, Geneva, sans-serif';
 // Change library file/folder font here.
 const LIBRARY_FONT_FAMILY = '"Helvetica Neue", Helvetica, Arial, sans-serif';
-const _DNA_COLOR_PRESETS = ['#111827', '#4a90d9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+const DNA_COLOR_PRESETS = ['#111827', '#4a90d9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#f97316', '#06b6d4', '#84cc16'];
 const LAB_HOSTS = [
   'Arabidopsis thaliana', 'Bacillus subtilis', 'Caenorhabditis elegans', 'Danio rerio',
   'Drosophila melanogaster', 'Escherichia coli', 'Homo sapiens', 'Insect Cells',
@@ -924,17 +924,36 @@ function CircularMap({
       <circle data-backbone="true" cx={cx} cy={cy} r={R + 2.5} fill="none" stroke="transparent" strokeWidth="22" style={{ cursor: 'crosshair' }} />
       <circle data-backbone="true" id="plasmid-backbone" cx={cx} cy={cy} r={R} fill="none" stroke="#2f3437" strokeWidth="3.2" />
       <circle data-backbone="true" cx={cx} cy={cy} r={R + 5} fill="none" stroke="#2f3437" strokeWidth="3.2" />
-      {sequenceColors.map((colorRegion, index) => (
-        <path
-          key={`seq-color-${colorRegion.start}-${colorRegion.end}-${index}`}
-          d={arcLinePath(colorRegion.start, colorRegion.end, R)}
-          fill="none"
-          stroke={colorRegion.color || '#4a90d9'}
-          strokeWidth="6"
-          strokeLinecap="round"
-          opacity="0.88"
-        />
-      ))}
+      {sequenceColors.flatMap((colorRegion, index) => {
+        const elements = [];
+        const isTop = colorRegion.strand === 1 || colorRegion.strand === 0 || colorRegion.strand === undefined;
+        const isBottom = colorRegion.strand === -1 || colorRegion.strand === 0 || colorRegion.strand === undefined;
+        if (isTop) {
+          elements.push(
+            <path
+              key={`seq-color-top-${colorRegion.start}-${colorRegion.end}-${index}`}
+              d={arcLinePath(colorRegion.start, colorRegion.end, R + 5)}
+              fill="none"
+              stroke={colorRegion.color || '#4a90d9'}
+              strokeWidth="3.2"
+              strokeLinecap="butt"
+            />
+          );
+        }
+        if (isBottom) {
+          elements.push(
+            <path
+              key={`seq-color-bottom-${colorRegion.start}-${colorRegion.end}-${index}`}
+              d={arcLinePath(colorRegion.start, colorRegion.end, R)}
+              fill="none"
+              stroke={colorRegion.color || '#4a90d9'}
+              strokeWidth="3.2"
+              strokeLinecap="butt"
+            />
+          );
+        }
+        return elements;
+      })}
       {[0, 0.25, 0.5, 0.75].map(frac => {
         const a = frac * 2 * Math.PI - Math.PI / 2;
         const pos = Math.round(frac * totalLen);
@@ -2951,8 +2970,25 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const colorSequenceRegion = (start, end, strand = 0, color = rangeColor) => {
     if (start === end) return;
     if (!isCircular && start > end) return;
-    setSequenceColors(prev => [...prev, { id: `sc_${Date.now()}`, start, end, strand, color }]);
+    if (color === '#111827') {
+      // Default black text resets / removes color highlight on this range and strand
+      setSequenceColors(prev => prev.filter(c => !(
+        ((c.start === start && c.end === end) || (c.start >= start && c.end <= end)) &&
+        (strand === 0 || c.strand === strand || c.strand === 0)
+      )));
+    } else {
+      setSequenceColors(prev => [
+        ...prev.filter(c => !(c.start === start && c.end === end && (strand === 0 || c.strand === strand))),
+        { id: `sc_${Date.now()}`, start, end, strand, color }
+      ]);
+    }
     setRangeColor(color);
+  };
+
+  const removeSequenceColorRegion = (start, end, strand = 0) => {
+    setSequenceColors(prev => prev.filter(c => !(
+      c.start === start && c.end === end && (strand === 0 || c.strand === strand || c.strand === 0)
+    )));
   };
 
   const itemAnchor = (kind, item, index) => ({
@@ -6180,11 +6216,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                               onClick={e => {
                                 const rect = e.currentTarget.getBoundingClientRect();
                                 setActiveColorPicker({
-                                  type: 'selection-color',
+                                  type: 'dna-color',
                                   color: rangeColor || '#facc15',
                                   rect,
+                                  onApply: (strand, col) => colorSequenceRegion(selectedRange.start, selectedRange.end, strand, col),
                                   onChange: col => colorSequenceRegion(selectedRange.start, selectedRange.end, 0, col),
-                                  onRemove: () => setSequenceColors(prev => prev.filter(c => !(c.start === selectedRange.start && c.end === selectedRange.end)))
+                                  onRemove: (strand = 0) => removeSequenceColorRegion(selectedRange.start, selectedRange.end, strand)
                                 });
                               }}
                               className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors border border-slate-200 shadow-sm whitespace-nowrap flex-shrink-0"
@@ -6243,11 +6280,12 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                     onClick={e => {
                                       const rect = e.currentTarget.getBoundingClientRect();
                                       setActiveColorPicker({
-                                        type: 'search-color',
+                                        type: 'dna-color',
                                         color: rangeColor || '#facc15',
                                         rect,
+                                        onApply: (strand, col) => colorSequenceRegion(currentMatch.start, currentMatch.end, strand, col),
                                         onChange: col => colorSequenceRegion(currentMatch.start, currentMatch.end, currentMatch.strand || 0, col),
-                                        onRemove: () => setSequenceColors(prev => prev.filter(c => !(c.start === currentMatch.start && c.end === currentMatch.end)))
+                                        onRemove: (strand = 0) => removeSequenceColorRegion(currentMatch.start, currentMatch.end, strand)
                                       });
                                     }}
                                     className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 transition-colors border border-amber-200 shadow-sm"
@@ -6792,7 +6830,8 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
 }
 
 function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
-  const localStorageKey = `saved_colors_${activeColorPicker.type}`;
+  const isDnaColor = activeColorPicker.type === 'dna-color' || activeColorPicker.type === 'selection-color' || activeColorPicker.type === 'search-color' || activeColorPicker.type === 'dna';
+  const localStorageKey = `saved_colors_${isDnaColor ? 'dna' : activeColorPicker.type}`;
   const [savedColors, setSavedColors] = React.useState(() => {
     try {
       return JSON.parse(localStorage.getItem(localStorageKey) || '[]');
@@ -6802,18 +6841,33 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
   });
 
   const presets = 
+    isDnaColor ? DNA_COLOR_PRESETS :
     activeColorPicker.type === 'feature' ? FEATURE_PRESET_COLORS :
     activeColorPicker.type === 'primer' ? PRIMER_COLORS :
     RE_HIGHLIGHT_COLORS;
 
   const handleSelectColor = (color) => {
-    activeColorPicker.onChange(color);
+    if (isDnaColor) {
+      setActiveColorPicker(current => current ? { ...current, color } : current);
+    } else {
+      activeColorPicker.onChange(color);
+      setActiveColorPicker(null);
+    }
+  };
+
+  const handleApplyStrand = (strand) => {
+    const selectedColor = activeColorPicker.color || '#111827';
+    if (activeColorPicker.onApply) {
+      activeColorPicker.onApply(strand, selectedColor);
+    } else if (activeColorPicker.onChange) {
+      activeColorPicker.onChange(selectedColor, strand);
+    }
     setActiveColorPicker(null);
   };
 
   const handleSaveColor = () => {
     const color = activeColorPicker.color;
-    if (!savedColors.includes(color)) {
+    if (color && !savedColors.includes(color)) {
       const next = [...savedColors, color];
       setSavedColors(next);
       localStorage.setItem(localStorageKey, JSON.stringify(next));
@@ -6828,16 +6882,17 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
 
   // Calculate coordinates relative to screen/viewport:
   const spaceBelow = window.innerHeight - activeColorPicker.rect.bottom;
-  const showAbove = spaceBelow < 185;
+  const popupHeight = isDnaColor ? 260 : 185;
+  const showAbove = spaceBelow < popupHeight;
   const top = showAbove 
-    ? activeColorPicker.rect.top - 185
+    ? activeColorPicker.rect.top - popupHeight
     : activeColorPicker.rect.bottom + 4;
-  const left = Math.max(10, Math.min(window.innerWidth - 200, activeColorPicker.rect.left - 130));
+  const left = Math.max(10, Math.min(window.innerWidth - 240, activeColorPicker.rect.left - 110));
 
   return (
     <ViewportPanel
       id="fixed-color-picker-popover"
-      className="fixed z-[9999] w-48 rounded-xl border border-slate-200 bg-white p-3 shadow-2xl transition-all select-none"
+      className={`fixed z-[9999] ${isDnaColor ? 'w-56' : 'w-48'} rounded-xl border border-slate-200 bg-white p-3 shadow-2xl transition-all select-none`}
       style={{
         top: `${top}px`,
         left: `${left}px`,
@@ -6845,21 +6900,36 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
       onMouseDown={e => e.stopPropagation()}
       onClick={e => e.stopPropagation()}
     >
-      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Presets</p>
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+          {isDnaColor ? 'DNA Kleur' : 'Presets'}
+        </p>
+        {isDnaColor && (
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] text-slate-400">Gekozen:</span>
+            <span className="h-3.5 w-3.5 rounded-full border border-slate-300 inline-block shadow-xs" style={{ backgroundColor: activeColorPicker.color || '#111827' }} />
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-5 gap-1 pb-2">
         {presets.map(preset => (
           <button
             key={preset}
             type="button"
             onClick={() => handleSelectColor(preset)}
-            className={`h-6 w-6 rounded border ${activeColorPicker.color === preset ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-slate-200'} hover:scale-105 transition-transform`}
+            className={`h-6 w-6 rounded border ${activeColorPicker.color === preset ? 'ring-2 ring-teal-500 ring-offset-1 scale-105' : 'border-slate-200'} hover:scale-105 transition-transform flex items-center justify-center`}
             style={{ backgroundColor: preset }}
-            title={preset}
-          />
+            title={preset === '#111827' ? 'Default zwart (standaard / reset kleur)' : preset}
+          >
+            {preset === '#111827' && isDnaColor && (
+              <span className="text-[8px] text-slate-300 font-mono font-bold leading-none">def</span>
+            )}
+          </button>
         ))}
       </div>
 
-      <div className="mt-2 pt-2 border-t border-slate-100">
+      <div className="mt-1 pt-1.5 border-t border-slate-100">
         <div className="flex items-center justify-between mb-1.5">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Saved Colors</p>
           <button
@@ -6879,7 +6949,7 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
                 <button
                   type="button"
                   onClick={() => handleSelectColor(color)}
-                  className={`h-6 w-6 rounded border ${activeColorPicker.color === color ? 'ring-2 ring-slate-400 ring-offset-1' : 'border-slate-200'} hover:scale-105 transition-transform`}
+                  className={`h-6 w-6 rounded border ${activeColorPicker.color === color ? 'ring-2 ring-teal-500 ring-offset-1' : 'border-slate-200'} hover:scale-105 transition-transform`}
                   style={{ backgroundColor: color }}
                 />
                 <button
@@ -6901,18 +6971,18 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
         )}
       </div>
 
-      <div className="mt-2.5 pt-2 border-t border-slate-100 flex gap-1.5">
+      <div className="mt-2 pt-2 border-t border-slate-100 flex gap-1.5">
         <label className="flex flex-1 h-7 cursor-pointer items-center justify-center gap-1 rounded-md border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-colors relative overflow-hidden">
           Custom
           <input
             type="color"
-            value={activeColorPicker.color}
+            value={activeColorPicker.color || '#facc15'}
             onChange={(e) => {
               const color = e.target.value;
               setActiveColorPicker(current => current ? {
                 ...current,
                 color,
-                customColorPending: true,
+                customColorPending: !isDnaColor,
               } : current);
             }}
             className="absolute inset-0 opacity-0 cursor-pointer"
@@ -6924,11 +6994,49 @@ function FixedColorPickerPopup({ activeColorPicker, setActiveColorPicker }) {
             type="button"
             onClick={() => { activeColorPicker.onRemove(); setActiveColorPicker(null); }}
             className="h-7 px-2 rounded-md border border-slate-200 text-[10px] font-bold text-red-600 hover:bg-red-50 transition-colors"
+            title="Verwijder kleur op selectie"
           >
             Remove
           </button>
         )}
       </div>
+
+      {isDnaColor && (
+        <div className="mt-2.5 pt-2 border-t border-slate-100">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 text-center">
+            Toepassen op streng
+          </p>
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => handleApplyStrand(1)}
+              className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-slate-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 transition-all shadow-xs"
+              title={"Bovenste streng (5' → 3')"}
+            >
+              <span className="text-[11px] font-bold">Top</span>
+              <span className="text-[9px] text-slate-400">{"5' → 3'"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyStrand(-1)}
+              className="flex flex-col items-center justify-center rounded-lg border border-slate-200 bg-slate-50 px-1 py-1 text-slate-700 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-800 transition-all shadow-xs"
+              title={"Onderste streng (3' ← 5')"}
+            >
+              <span className="text-[11px] font-bold">Bottom</span>
+              <span className="text-[9px] text-slate-400">{"3' ← 5'"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApplyStrand(0)}
+              className="flex flex-col items-center justify-center rounded-lg border border-teal-200 bg-teal-50 px-1 py-1 text-teal-800 hover:bg-teal-100 hover:border-teal-400 transition-all shadow-xs"
+              title="Beide strengen"
+            >
+              <span className="text-[11px] font-bold">Both</span>
+              <span className="text-[9px] text-teal-600">Beide</span>
+            </button>
+          </div>
+        </div>
+      )}
     </ViewportPanel>
   );
 }
