@@ -12,7 +12,7 @@
         "url": "https://github.com/DaphneHoutackers/BiBaBench-Buddy"
     },
     "main": "dist-electron/main.js",
-    "version": "2.1.9",
+    "version": "2.1.10",
     "scripts": {
         "test": "node --test src/lib/*.test.js",
         "dev": "vite",

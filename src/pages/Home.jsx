@@ -625,7 +625,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false);
   const [showAuthWelcome, setShowAuthWelcome] = useState(() => {
     try {
-      return localStorage.getItem(AUTH_WELCOME_COMPLETED_KEY) !== 'true';
+      return sessionStorage.getItem(AUTH_WELCOME_COMPLETED_KEY) !== 'true';
     } catch {
       return true;
     }
@@ -645,7 +645,7 @@ export default function Home() {
     if (!user) return;
 
     try {
-      localStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
+      sessionStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
     } catch {
       // Keep the in-memory state working when persistent storage is unavailable.
     }
@@ -654,7 +654,7 @@ export default function Home() {
 
   const dismissAuthWelcome = () => {
     try {
-      localStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
+      sessionStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
     } catch {
       // The modal still stays dismissed for the current app session.
     }
@@ -1404,7 +1404,14 @@ export default function Home() {
 
             <Sidebar
               active={active}
-              onSelect={(id) => { setActive(id); setHistoryData(null); }}
+              onSelect={(id) => {
+                if (id === 'notes' && active === 'notes') {
+                  window.dispatchEvent(new CustomEvent('bibabench:notes-reset'));
+                }
+                setActive(id);
+                setHistoryData(null);
+                if (isMobile) setSidebarOpen(false);
+              }}
               onSelectTab={handleSelectTab}
               activeTab={activeTab}
               isDark={isDark}

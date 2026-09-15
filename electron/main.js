@@ -330,12 +330,17 @@ const createWindow = async () => {
     : "default-src 'self' data: blob:; connect-src 'self' data: blob: https://*.supabase.co https://generativelanguage.googleapis.com https://api.groq.com https://api.openai.com https://openrouter.ai; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: https:;";
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [csp],
-      },
-    });
+    const isAppUrl = details.url.startsWith('http://localhost') || details.url.startsWith('http://127.0.0.1') || details.url.startsWith('file://');
+    if (isAppUrl) {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [csp],
+        },
+      });
+    } else {
+      callback({ responseHeaders: details.responseHeaders });
+    }
   });
 
   mainWindow.once('ready-to-show', () => {

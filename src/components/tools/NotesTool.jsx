@@ -2672,6 +2672,7 @@ export default function NotesTool({ settings, historyData }) {
   const [tableOverlay, setTableOverlay] = useState(null); // { table, row, cell, rowIndex, colIndex, rowMenuOpen, colMenuOpen, rowTop, rowLeft, colTop, colLeft }
   const [copiedTableData, setCopiedTableData] = useState(null); // { type: 'row' | 'col', data: [] }
   const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const columnResizeRef = useRef(null);
   const columnMenuRef = useRef(null);
   const headerMenuRef = useRef(null);
@@ -2682,6 +2683,17 @@ export default function NotesTool({ settings, historyData }) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    const handleReset = () => {
+      setSelected(null);
+      setGridFolderId(null);
+      setViewMode('library');
+      setMobileDrawerOpen(false);
+    };
+    window.addEventListener('bibabench:notes-reset', handleReset);
+    return () => window.removeEventListener('bibabench:notes-reset', handleReset);
+  }, [setSelected]);
 
   const editorRef = useRef(null);
   const tableDragRef = useRef(null);
@@ -4888,12 +4900,14 @@ export default function NotesTool({ settings, historyData }) {
         onClick={() => {
           setSelected(n.id);
           setViewMode('library');
+          setMobileDrawerOpen(false);
         }}
         onKeyDown={e => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             setSelected(n.id);
             setViewMode('library');
+            setMobileDrawerOpen(false);
           }
         }}
         onContextMenu={e => openMenu(e, { ...n, type: 'note' })}
@@ -5572,6 +5586,185 @@ export default function NotesTool({ settings, historyData }) {
     }
   };
 
+  const renderSidebarContent = (isDrawer = false) => (
+    <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
+      {/* Sidebar Header: Entire header bar is clickable to open Library Overview */}
+      <div
+        onClick={() => {
+          if (collapsed && !isDrawer) {
+            setCollapsed(false);
+          } else {
+            setSelected(null);
+            setViewMode('library-overview');
+            setGridFolderId(null);
+            if (isDrawer) setMobileDrawerOpen(false);
+          }
+        }}
+        className={`flex h-12 items-center justify-between border-b px-3 dark:border-slate-800 shrink-0 cursor-pointer select-none transition-colors ${
+          viewMode === 'library-overview' && !selected && (!collapsed || isDrawer)
+            ? 'bg-slate-100/70 dark:bg-slate-800/60'
+            : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+        }`}
+        title={isNl ? 'Volledige bibliotheek overzicht bekijken' : 'View full library overview'}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span
+            className={`text-sm font-bold truncate ${
+              viewMode === 'library-overview' && !selected
+                ? 'text-slate-900 dark:text-white'
+                : 'text-slate-700 dark:text-slate-300'
+            } ${collapsed && !isDrawer ? 'hidden' : ''}`}
+          >
+            {viewMode === 'trash' ? (isNl ? 'Prullenbak' : 'Trash') : (isNl ? 'Bibliotheek' : 'Library')}
+          </span>
+        </div>
+        {!isDrawer ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed(v => !v);
+            }}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+            title={collapsed ? (isNl ? 'Zijbalk uitklappen' : 'Expand sidebar') : (isNl ? 'Zijbalk inklappen' : 'Collapse sidebar')}
+          >
+            {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setMobileDrawerOpen(false);
+            }}
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700"
+            title={isNl ? 'Sluiten' : 'Close'}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {(!collapsed || isDrawer) && (
+        <div className="flex flex-col min-h-0 flex-1 p-2">
+          {/* Search bar & Sleek Gray Add Folder & Add Note Buttons */}
+          <div className="grid grid-cols-[1fr_34px_34px] gap-1 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input className={`${fieldClass} w-full pl-8`} placeholder={isNl ? 'Zoek notities…' : 'Search notes…'} value={query} onChange={e => setQuery(e.target.value)} />
+            </div>
+            <button
+              type="button"
+              title={isNl ? 'Nieuwe map' : 'New folder'}
+              onClick={() => createFolder()}
+              className="flex items-center justify-center rounded-lg bg-slate-100 border border-slate-200/60 text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-colors"
+            >
+              <FolderPlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              title={isNl ? 'Nieuwe notitie' : 'New note'}
+              onClick={() => { createNote(); if (isDrawer) setMobileDrawerOpen(false); }}
+              className="flex items-center justify-center rounded-lg bg-slate-100 border border-slate-200/60 text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-colors"
+            >
+              <FilePlus className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="mt-3 flex-1 overflow-y-auto min-h-0">
+            {viewMode === 'trash' ? (
+              <>
+                <div className="flex items-center justify-between px-2 py-1 mb-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    {deletedNotes.length} {isNl ? 'verwijderd' : 'deleted'}
+                  </span>
+                  {deletedNotes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(isNl ? 'Weet je zeker dat je alle notities in de prullenbak permanent wilt verwijderen?' : 'Are you sure you want to permanently delete all notes in trash?')) {
+                          setNotes(v => v.filter(n => !n.deleted));
+                          setSelected(null);
+                        }
+                      }}
+                      className="text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
+                    >
+                      {isNl ? 'Prullenbak legen' : 'Empty trash'}
+                    </button>
+                  )}
+                </div>
+                {sortedDeleted.map(n => (
+                  <div
+                    key={n.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setSelected(n.id);
+                      setViewMode('trash');
+                      if (isDrawer) setMobileDrawerOpen(false);
+                    }}
+                    className={`group flex h-8 w-full cursor-pointer items-center justify-between rounded-lg px-2 text-left text-sm ${
+                      selected === n.id ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-medium' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {renderNoteIcon(n.icon, n.color, "h-[19px] w-[19px] shrink-0 opacity-70")}
+                      <span className="min-w-0 truncate">{n.title}</span>
+                    </div>
+                  </div>
+                ))}
+                {deletedNotes.length === 0 && (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    {isNl ? 'De prullenbak is leeg.' : 'Trash is empty.'}
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                {folders.filter(f => !f.parent).map(f => renderFolder(f))}
+                {sortedActive.filter(n => !n.folder).map(n => renderNote(n))}
+                {sortedActive.length === 0 && folders.length === 0 && (
+                  <div className="py-8 text-center text-xs text-slate-400">
+                    {isNl ? 'Geen notities. Maak een nieuwe notitie aan.' : 'No notes. Create a new note.'}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bottom section: Library / Trash toggle */}
+      {(!collapsed || isDrawer) && (
+        <div className="border-t p-2 dark:border-slate-800 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setViewMode(v => v === 'trash' ? 'library' : 'trash');
+              setSelected(null);
+              if (isDrawer) setMobileDrawerOpen(false);
+            }}
+            className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition ${
+              viewMode === 'trash'
+                ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-semibold'
+                : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Trash className="h-3.5 w-3.5" />
+              <span>{isNl ? 'Prullenbak' : 'Trash'}</span>
+            </div>
+            {deletedNotes.length > 0 && (
+              <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                {deletedNotes.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <ToolShell icon={NotebookPen} title="Notes" description="Write, format and organize reusable lab notes.">
       <div className={`grid h-[calc(100vh-140px)] max-h-[calc(100vh-140px)] overflow-hidden rounded-xl border border-slate-200 bg-white transition-all dark:border-slate-800 dark:bg-slate-900 ${
@@ -5580,166 +5773,21 @@ export default function NotesTool({ settings, historyData }) {
         <aside className={`flex flex-col justify-between h-full overflow-hidden border-r dark:border-slate-800 ${
           isMobile && (selected || viewMode === 'library-overview') ? 'hidden' : 'flex'
         }`}>
-          <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
-            {/* Sidebar Header: Entire header bar is clickable to open Library Overview */}
-            <div
-              onClick={() => {
-                if (collapsed) {
-                  setCollapsed(false);
-                } else {
-                  setSelected(null);
-                  setViewMode('library-overview');
-                  setGridFolderId(null);
-                }
-              }}
-              className={`flex h-12 items-center justify-between border-b px-3 dark:border-slate-800 shrink-0 cursor-pointer select-none transition-colors ${
-                viewMode === 'library-overview' && !selected && !collapsed
-                  ? 'bg-slate-100/70 dark:bg-slate-800/60'
-                  : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
-              }`}
-              title={isNl ? 'Volledige bibliotheek overzicht bekijken' : 'View full library overview'}
-            >
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span
-                  className={`text-sm font-bold truncate ${
-                    viewMode === 'library-overview' && !selected
-                      ? 'text-slate-900 dark:text-white'
-                      : 'text-slate-700 dark:text-slate-300'
-                  } ${collapsed ? 'hidden' : ''}`}
-                >
-                  {viewMode === 'trash' ? (isNl ? 'Prullenbak' : 'Trash') : (isNl ? 'Bibliotheek' : 'Library')}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCollapsed(v => !v);
-                }}
-                className="rounded-lg p-2 text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-700"
-                title={collapsed ? (isNl ? 'Zijbalk uitklappen' : 'Expand sidebar') : (isNl ? 'Zijbalk inklappen' : 'Collapse sidebar')}
-              >
-                {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
-              </button>
-            </div>
-
-            {!collapsed && (
-              <div className="flex flex-col min-h-0 flex-1 p-2">
-                {/* Search bar & Sleek Gray Add Folder & Add Note Buttons */}
-                <div className="grid grid-cols-[1fr_34px_34px] gap-1 shrink-0">
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                    <input className={`${fieldClass} w-full pl-8`} placeholder={isNl ? 'Zoek notities…' : 'Search notes…'} value={query} onChange={e => setQuery(e.target.value)} />
-                  </div>
-                  <button
-                    type="button"
-                    title={isNl ? 'Nieuwe map' : 'New folder'}
-                    onClick={() => createFolder()}
-                    className="flex items-center justify-center rounded-lg bg-slate-100 border border-slate-200/60 text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-colors"
-                  >
-                    <FolderPlus className="h-4 w-4" />
-                  </button>
-                  <button
-                    type="button"
-                    title={isNl ? 'Nieuwe notitie' : 'New note'}
-                    onClick={() => createNote()}
-                    className="flex items-center justify-center rounded-lg bg-slate-100 border border-slate-200/60 text-slate-700 hover:bg-slate-200 hover:text-slate-900 dark:bg-slate-800 dark:border-slate-700/60 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-white transition-colors"
-                  >
-                    <FilePlus className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="mt-3 flex-1 overflow-y-auto min-h-0">
-                  {viewMode === 'trash' ? (
-                    <>
-                      <div className="flex items-center justify-between px-2 py-1 mb-2">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                          {deletedNotes.length} {isNl ? 'verwijderd' : 'deleted'}
-                        </span>
-                        {deletedNotes.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(isNl ? 'Weet je zeker dat je alle notities in de prullenbak permanent wilt verwijderen?' : 'Are you sure you want to permanently delete all notes in trash?')) {
-                                setNotes(v => v.filter(n => !n.deleted));
-                                setSelected(null);
-                              }
-                            }}
-                            className="text-[11px] font-semibold text-red-600 hover:underline dark:text-red-400"
-                          >
-                            {isNl ? 'Prullenbak legen' : 'Empty trash'}
-                          </button>
-                        )}
-                      </div>
-                      {sortedDeleted.map(n => (
-                        <div
-                          key={n.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => {
-                            setSelected(n.id);
-                            setViewMode('trash');
-                          }}
-                          className={`group flex h-8 w-full cursor-pointer items-center justify-between rounded-lg px-2 text-left text-sm ${
-                            selected === n.id ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-medium' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            {renderNoteIcon(n.icon, n.color, "h-[19px] w-[19px] shrink-0 opacity-70")}
-                            <span className="min-w-0 truncate">{n.title}</span>
-                          </div>
-                        </div>
-                      ))}
-                      {deletedNotes.length === 0 && (
-                        <div className="py-8 text-center text-xs text-slate-400">
-                          {isNl ? 'De prullenbak is leeg.' : 'Trash is empty.'}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {folders.filter(f => !f.parent).map(f => renderFolder(f))}
-                      {sortedActive.filter(n => !n.folder).map(n => renderNote(n))}
-                      {sortedActive.length === 0 && folders.length === 0 && (
-                        <div className="py-8 text-center text-xs text-slate-400">
-                          {isNl ? 'Geen notities. Maak een nieuwe notitie aan.' : 'No notes. Create a new note.'}
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Bottom section: Library / Trash toggle */}
-          {!collapsed && (
-            <div className="border-t p-2 dark:border-slate-800 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode(v => v === 'trash' ? 'library' : 'trash');
-                  setSelected(null);
-                }}
-                className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition ${
-                  viewMode === 'trash'
-                    ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 font-semibold'
-                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Trash className="h-3.5 w-3.5" />
-                  <span>{isNl ? 'Prullenbak' : 'Trash'}</span>
-                </div>
-                {deletedNotes.length > 0 && (
-                  <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
-                    {deletedNotes.length}
-                  </span>
-                )}
-              </button>
-            </div>
-          )}
+          {renderSidebarContent(false)}
         </aside>
+
+        {/* Mobile Slide-over Notes Sidepanel Drawer */}
+        {isMobile && mobileDrawerOpen && (
+          <div className="fixed inset-0 z-[70] flex">
+            <div
+              className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+              onClick={() => setMobileDrawerOpen(false)}
+            />
+            <div className="relative z-10 w-72 max-w-[85vw] h-full bg-white dark:bg-slate-900 shadow-2xl border-r border-slate-200 dark:border-slate-800 flex flex-col animate-in slide-in-from-left duration-200">
+              {renderSidebarContent(true)}
+            </div>
+          </div>
+        )}
 
         <main className={`flex flex-col h-full min-w-0 overflow-hidden relative ${
           isMobile && !selected && viewMode !== 'library-overview' ? 'hidden' : 'flex'
@@ -5781,17 +5829,40 @@ export default function NotesTool({ settings, historyData }) {
               )}
 
               {/* Note Header */}
-              <div className="flex items-center gap-2 sm:gap-3 border-b px-3 sm:px-4 py-3 dark:border-slate-800 shrink-0">
-                {isMobile && (
+              <div className="flex items-center gap-1.5 sm:gap-3 border-b px-2.5 sm:px-4 py-3 dark:border-slate-800 shrink-0">
+                {isMobile ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setSelected(null)}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                      title={isNl ? 'Terug naar overzicht' : 'Back to overview'}
+                    >
+                      <ArrowLeft className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileDrawerOpen(v => !v)}
+                      className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${
+                        mobileDrawerOpen
+                          ? 'bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-300'
+                          : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
+                      }`}
+                      title={isNl ? 'Zijbalk met notities openen' : 'Open notes sidepanel'}
+                    >
+                      <PanelLeftOpen className="h-5 w-5" />
+                    </button>
+                  </div>
+                ) : collapsed ? (
                   <button
                     type="button"
-                    onClick={() => setSelected(null)}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0 mr-0.5"
-                    title={isNl ? 'Terug naar notities' : 'Back to notes'}
+                    onClick={() => setCollapsed(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 shrink-0 mr-1"
+                    title={isNl ? 'Zijbalk uitklappen' : 'Expand sidebar'}
                   >
-                    <ArrowLeft className="h-5 w-5" />
+                    <PanelLeftOpen className="h-4 w-4" />
                   </button>
-                )}
+                ) : null}
 
                 <button
                   type="button"
