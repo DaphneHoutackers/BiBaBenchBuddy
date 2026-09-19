@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bi-ba-bench-buddy.vercel.app/sitemap.xml

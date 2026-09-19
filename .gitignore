@@ -36,3 +36,8 @@ README_files
 .env
 .vercel
 .env*.local
+
+README-oud.md
+README-oud.html
+README.html
+docs/app-screenshot-oud.png

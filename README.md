@@ -1,25 +1,15 @@
 # BiBaBenchBuddy
 
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest" height="20">
-<a href="https://img.shields.io/github/downloads/DaphneHoutackers/BiBaBench-Buddy/total?style=for-the-badge&logo=github&label=downloads" height="20">
-<a href="https://bi-ba-bench-buddy.vercel.app/">
-  <img src="https://img.shields.io/badge/Open-Webapp-BF5FFF?style=for-the-badge&logo=vercel&logoColor=white" height="20" />
-</a>
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg">
-  <img src="https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white" height="20" />
-</a>
-<a href="https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe">
-  <img src="https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white" height="20" />
-</a>
-<a href="https://buymeacoffee.com/daphnewoodpecker">
-  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="20">
-</a>
+### Free Molecular Biology Lab Calculators & Bench Tools
 
-BiBaBenchBuddy is a desktop and web application designed for molecular biology workflows. It provides practical tools for calculations, visualization, and protocol support, helping streamline routine lab work and reduce manual errors.
+[Open Web App](https://bi-ba-bench-buddy.vercel.app/) • [Download for macOS](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest) • [Download for Windows](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest)
 
-<p align="center">
-  <img src="docs/app-screenshot.png" alt="BiBaBench Buddy screenshot" width="900">
-</p>
+BiBaBenchBuddy is a free molecular biology laboratory toolkit for everyday bench work. It combines commonly used lab calculators, visualization tools, DNA analysis and protocol support in one desktop and web application.
+
+Use BiBaBenchBuddy for PCR setup, restriction digests, DNA ligation, Gibson assembly, dilutions, protein assays, buffer preparation, gel electrophoresis, western blot simulation, plasmid and DNA sequence analysis, and molecular biology protocols.
+
+
+![BiBaBenchBuddy molecular biology laboratory calculator and bench toolkit](/docs/app-screenshot.png)
 
 ## Features
 
@@ -98,7 +88,6 @@ Click the **Settings** icon in the top right:
 - **Plasmid Analyzer**:
   - **Map Visualization**: View circular or linear plasmid maps with auto-detection of common features and ORFs.
   - **Alignment**: Align two sequences to identify mismatches
-- **Image Annotator (BETA)**: Upload your own gel or blot images. Add annotations, arrows, and lane labels.
 
 🤖 **Protocols & AI**
 
@@ -106,31 +95,11 @@ Click the **Settings** icon in the top right:
 - - **Protocol Library**: A searchable database of standard molecular biology protocols that can be customized and exported.
 - **AI Buffer Assistant**: A conversational AI optimized for lab chemistry. Describe the buffer you need (e.g., "1X TAE with 10mM EDTA"), and it will generate a recipe you can save to your history.
 
-## 🧭 Planned Features
-
-- [ ] Gibson tool
-- [ ] Primer designer tool
-- [ ] General extra's for all tools
-
-## 📄 Development
-
-If you wish to run this locally:
-
-```bash
-git clone https://github.com/your-username/your-repo.git
-cd your-repo
-npm install
-npm run dev #web
-npm run app:dev #desktop
-```
-
 ## ⚠️ Known Issues
 
 The following issues are known:
 
 - Ta Calculator - The Annealing Temperature (Ta) logic is currently being refined and may not be 100% accurate for high-GC or complex primer pairs.
-- Image Annotator - This tool is in active beta. While basic labeling and exporting work, some advanced selection and scaling features may still behave unexpectedly.
-- Sequence Analyzer - The feature labeling is not very nicely visualized yet.
 
 ## 📜 Changelog
 
@@ -144,3 +113,5 @@ If you like this app, feel free to buy me a coffee :)
 <a href="https://buymeacoffee.com/daphnewoodpecker" target="_blank">
   <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" height="50">
 </a>
+
+

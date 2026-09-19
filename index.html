@@ -2,17 +2,124 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+
+    <!-- Icons / PWA -->
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
+
+    <!-- Basic -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#14b8a6" />
+
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <title>BiBaBench Buddy</title>
+
+    <!-- Primary SEO -->
+    <title>BiBaBenchBuddy | Molecular Biology Lab Calculators & Tools</title>
+
+    <meta
+      name="description"
+      content="Free molecular biology lab calculators and bench tools for PCR, restriction digests, ligation, Gibson assembly, dilutions, protein assays, buffers, gel electrophoresis and DNA sequence analysis."
+    />
+
+    <meta name="author" content="Daphne Houtackers" />
+    <meta name="application-name" content="BiBaBenchBuddy" />
+
+    <link
+      rel="canonical"
+      href="https://bi-ba-bench-buddy.vercel.app/"
+    />
+
+    <!-- Open Graph -->
+    <meta
+      property="og:title"
+      content="BiBaBenchBuddy | Molecular Biology Lab Calculators & Tools"
+    />
+
+    <meta
+      property="og:description"
+      content="Free molecular biology calculators and bench tools for PCR, cloning, restriction digests, Gibson assembly, buffers, gels, protein assays and DNA analysis."
+    />
+
+    <meta property="og:type" content="website" />
+
+    <meta
+      property="og:url"
+      content="https://bi-ba-bench-buddy.vercel.app/"
+    />
+
+    <meta
+      property="og:image"
+      content="https://bi-ba-bench-buddy.vercel.app/icon-1024.png"
+    />
+
+    <meta property="og:site_name" content="BiBaBenchBuddy" />
+
+    <!-- Social preview -->
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <meta
+      name="twitter:title"
+      content="BiBaBenchBuddy | Molecular Biology Lab Tools"
+    />
+
+    <meta
+      name="twitter:description"
+      content="Free molecular biology calculators and bench tools for everyday laboratory workflows."
+    />
+
+    <meta
+      name="twitter:image"
+      content="https://bi-ba-bench-buddy.vercel.app/icon-1024.png"
+    />
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "BiBaBenchBuddy",
+        "alternateName": "BiBaBench Buddy",
+        "url": "https://bi-ba-bench-buddy.vercel.app/",
+        "image": "https://bi-ba-bench-buddy.vercel.app/icon-1024.png",
+        "description": "Free molecular biology laboratory toolkit providing calculators and tools for PCR, restriction digests, ligation, Gibson assembly, dilutions, protein assays, buffers, gel electrophoresis and DNA sequence analysis.",
+        "applicationCategory": "ScienceApplication",
+        "applicationSubCategory": "Molecular Biology Laboratory Tools",
+        "operatingSystem": "Web, macOS, Windows",
+        "isAccessibleForFree": true,
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "EUR"
+        },
+        "author": {
+          "@type": "Person",
+          "name": "Daphne Houtackers"
+        },
+        "sameAs": [
+          "https://github.com/DaphneHoutackers/BiBaBench-Buddy"
+        ],
+        "featureList": [
+          "PCR calculator",
+          "Restriction digest calculator",
+          "DNA ligation calculator",
+          "Gibson assembly calculator",
+          "Dilution calculator",
+          "Protein assay calculator",
+          "Buffer calculator",
+          "Gel electrophoresis simulator",
+          "Western blot simulator",
+          "DNA sequence analyzer",
+          "Molecular biology protocol library"
+        ]
+      }
+    </script>
   </head>
+
   <body>
     <div id="root"></div>
+
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
