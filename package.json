@@ -1,15 +1,15 @@
 {
-    "name": "bibabench-buddy",
+    "name": "bibabenchbuddy",
     "private": false,
     "type": "module",
     "author": "Daphne Houtackers",
     "categories": [
         "Education"
     ],
-    "description": "BiBaBench Buddy desktop app",
+    "description": "Free molecular biology lab calculators and bench tools for PCR, restriction digests, ligation, Gibson assembly, dilutions, buffers, protein assays and DNA sequence analysis.",
     "repository": {
         "type": "git",
-        "url": "https://github.com/DaphneHoutackers/BiBaBench-Buddy"
+        "url": "https://github.com/DaphneHoutackers/BiBaBenchBuddy"
     },
     "main": "dist-electron/main.js",
     "version": "2.1.10",
@@ -80,10 +80,10 @@
         "vite-plugin-electron": "^0.29.1",
         "vite-plugin-electron-renderer": "^0.14.6"
     },
-    "homepage": "https://github.com/DaphneHoutackers/BiBaBench-Buddy",
+    "homepage": "https://bi-ba-bench-buddy.vercel.app/",
     "build": {
         "appId": "com.bibabenchbuddy.app",
-        "productName": "BiBaBench Buddy",
+        "productName": "BiBaBenchBuddy",
         "directories": {
             "output": "release"
         },
@@ -107,9 +107,8 @@
             "artifactName": "BiBaBenchBuddy-${version}-mac-${arch}.${ext}"
         },
         "dmg": {
-            "title": "BiBaBench Buddy",
+            "title": "BiBaBenchBuddy",
             "icon": "build/icon.icns",
-            "background": "build/background.png",
             "iconSize": 100,
             "window": {
                 "width": 550,
@@ -137,7 +136,7 @@
             "allowToChangeInstallationDirectory": true,
             "createDesktopShortcut": true,
             "createStartMenuShortcut": true,
-            "shortcutName": "BiBaBench Buddy",
+            "shortcutName": "BiBaBenchBuddy",
             "perMachine": false
         },
         "win": {

@@ -2,7 +2,7 @@
 
 ### Free Molecular Biology Lab Calculators & Bench Tools
 
-[Open Web App](https://bi-ba-bench-buddy.vercel.app/) • [Download for macOS](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest) • [Download for Windows](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest)
+[Open Web App](https://bi-ba-bench-buddy.vercel.app/) • [Download for macOS](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest) • [Download for Windows](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest)
 
 BiBaBenchBuddy is a free molecular biology laboratory toolkit for everyday bench work. It combines commonly used lab calculators, visualization tools, DNA analysis and protocol support in one desktop and web application.
 
@@ -29,25 +29,25 @@ Use BiBaBenchBuddy for PCR setup, restriction digests, DNA ligation, Gibson asse
 The latest webapp version is accessible in any browser at:  
 **[https://bi-ba-bench-buddy.vercel.app/](https://bi-ba-bench-buddy.vercel.app/)**
 
-### 💻 Desktop Application [![releases](https://img.shields.io/github/v/release/DaphneHoutackers/BiBaBench-Buddy)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases)
+### 💻 Desktop Application [![releases](https://img.shields.io/github/v/release/DaphneHoutackers/BiBaBenchBuddy)](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases)
 
 For a standalone experience with native performance:
 
 - **macOS version:**  
-  [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-mac-arm64.dmg)
+  [![Download for macOS](https://img.shields.io/badge/Download-macOS-black?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest/download/BiBaBenchBuddy-mac-arm64.dmg)
 - **Windows version:**  
-  [![Download for Windows](https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases/latest/download/BiBaBench-Buddy-Setup.exe)
+  [![Download for Windows](https://img.shields.io/badge/Download-Windows-blue?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest/download/BiBaBenchBuddy-Setup.exe)
 - **All versions & changelog:**  
-  [Releases overview](https://github.com/DaphneHoutackers/BiBaBench-Buddy/releases)
+  [Releases overview](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases)
 
 #### ⚠️ macOS: “App is damaged and can’t be opened” warning? ⚠️
 
 If you see the warning  
-‘BiBaBench-Buddy.app is damaged and can’t be opened. You should move it to the Trash’  
+‘BiBaBenchBuddy.app is damaged and can’t be opened. You should move it to the Trash’  
 when opening the app for the first time, run the following command in your Terminal:
 
 ```bash
-xattr -cr "/Applications/BiBaBench Buddy.app"
+xattr -cr "/Applications/BiBaBenchBuddy.app"
 ```
 
 After running this, try opening the app again. The warning should now be resolved.

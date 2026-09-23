@@ -43,8 +43,8 @@ jobs:
           tag="${GITHUB_REF##*/}"
           for file in release/*.dmg; do
             [ -e "$file" ] || continue
-            cp "$file" "release/BiBaBench-Buddy-mac-arm64.dmg"
-            mv "$file" "release/BiBaBench-Buddy-${tag}-mac-arm64.dmg"
+            cp "$file" "release/BiBaBenchBuddy-mac-arm64.dmg"
+            mv "$file" "release/BiBaBenchBuddy-${tag}-mac-arm64.dmg"
           done
 
       - name: Prepare artifacts for release (Windows)
@@ -54,8 +54,8 @@ jobs:
           tag="${GITHUB_REF##*/}"
           for file in release/*.exe; do
             [ -e "$file" ] || continue
-            cp "$file" "release/BiBaBench-Buddy-Setup.exe"
-            mv "$file" "release/BiBaBench-Buddy-${tag}-Setup.exe"
+            cp "$file" "release/BiBaBenchBuddy-Setup.exe"
+            mv "$file" "release/BiBaBenchBuddy-${tag}-Setup.exe"
           done
 
       - name: Upload macOS artifact

@@ -95,7 +95,7 @@ export function AuthWelcomeModal({ open, onClose }) {
         <div className="bg-gradient-to-br from-rose-400 via-pink-500 to-fuchsia-500 px-8 py-6 text-center text-white">
           <img
             src={appLogo}
-            alt="BiBaBench Buddy"
+            alt="BiBaBenchBuddy"
             className="mx-auto mb-3 h-20 w-20 rounded-[1.35rem] shadow-lg shadow-fuchsia-900/20"
           />
           <DialogHeader className="space-y-1.5 text-center sm:text-center">

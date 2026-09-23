@@ -269,13 +269,13 @@ const createMenu = () => {
         {
           label: 'GitHub Repository',
           click: () => {
-            shell.openExternal('https://github.com/DaphneHoutackers/BiBaBench-Buddy');
+            shell.openExternal('https://github.com/DaphneHoutackers/BiBaBenchBuddy');
           },
         },
         {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/DaphneHoutackers/BiBaBench-Buddy/issues');
+            shell.openExternal('https://github.com/DaphneHoutackers/BiBaBenchBuddy/issues');
           },
         },
         { type: 'separator' },
