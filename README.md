@@ -23,7 +23,7 @@ BiBaBenchBuddy is a free molecular biology laboratory toolkit for everyday bench
 
 Use BiBaBenchBuddy for PCR setup, restriction digests, DNA ligation, Gibson assembly, dilutions, protein assays, buffer preparation, gel electrophoresis, western blot simulation, plasmid and DNA sequence analysis, and molecular biology protocols.
 
-![BiBaBenchBuddy molecular biology laboratory calculator and bench toolkit](/docs/app-screenshot.png)
+![BiBaBenchBuddy molecular biology laboratory calculator and bench toolkit](/public/app-screenshot.png)
 
 ## Features
 

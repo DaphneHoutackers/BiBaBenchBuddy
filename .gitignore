@@ -20,6 +20,7 @@ release
 .npm-cache
 
 # Editor directories and files
+.vscode
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -42,3 +43,4 @@ README-oud.html
 README.html
 docs/app-screenshot-oud.png
 
+.kilo
