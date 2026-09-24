@@ -163,7 +163,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
   const { addHistoryItem } = useHistory();
   const sessionId = useRef(makeId());
   const tableRef = useRef(null);
-  const programTableRef = useRef(null);
   const [tab, setTab] = useState(() => {
     if (externalTab) return externalTab;
     return localStorage.getItem('bbb_pcr_tab') || 'mix';
@@ -197,7 +196,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
   const [finalExtCustom, setFinalExtCustom] = useState(() => localStorage.getItem('bbb_pcr_finalext') || '05:00');
   const [annealTimeCustom, setAnnealTimeCustom] = useState(() => localStorage.getItem('bbb_pcr_annealtime') || '00:30');
   const [customExtensionTime, setCustomExtensionTime] = useState(() => localStorage.getItem('bbb_pcr_custext') || '');
-  const [copiedProgram, setCopiedProgram] = useState(false);
 
   const useBetaine = (parseFloat(betaineVol) || 0) > 0;
 
@@ -409,18 +407,14 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
   const extensionSecs = customExtensionTime ? parseTimeToSeconds(customExtensionTime) : autoExtensionSecs;
 
   const isHighFid = ['Phusion High-Fidelity', 'Q5 High-Fidelity', 'Platinum SuperFi II', 'KAPA HiFi'].includes(polymerase);
-  const initDenatTemp = isHighFid ? 98 : 95;
 
-  const cycleDenatTemp = isHighFid ? 98 : 95;
   const cycleDenatSecs = isHighFid ? 10 : 30;
 
-  const cycleExtTemp = polymerase === 'PrimeSTAR GXL' ? 68 : 72;
 
   const initDenatTime = initDenatCustom || '05:00';
-  const cycleDenatTime = formatSeconds(cycleDenatSecs);
   const cycleAnnealTime = annealTimeCustom || '00:30';
   const finalExtTime = finalExtCustom || '05:00';
-  const extensionTimeStr = customExtensionTime ? customExtensionTime : formatSeconds(autoExtensionSecs);
+
 
   // Auto-calculated total program duration
   const totalCycleSecs = (cycleDenatSecs + parseTimeToSeconds(cycleAnnealTime) + extensionSecs) * (parseInt(cycleCount, 10) || 30);
@@ -437,7 +431,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
     }
     return `${mins}m ${secs}s`;
   };
-  const totalDurationStr = formatTotalDuration(totalProgramSecs);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 mb-2">
