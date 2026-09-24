@@ -4,9 +4,9 @@
 
 <a href="https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest">
   <img src="https://img.shields.io/github/v/release/DaphneHoutackers/BiBaBenchBuddy?style=for-the-badge&logo=github&label=release" height="20" />
-</a>
  <img src="https://img.shields.io/github/downloads/DaphneHoutackers/BiBaBenchBuddy/total?style=for-the-badge&label=downloads" height="20" />
-<a href="https://bi-ba-bench-buddy.vercel.app/">
+</a>
+ <a href="https://bi-ba-bench-buddy.vercel.app/">
   <img src="https://img.shields.io/badge/Webapp-BF5FFF?style=for-the-badge&logo=vercel&logoColor=white" height="20" />
 </a>
 <a href="https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest/download/BiBaBenchBuddy-mac-arm64.dmg">
