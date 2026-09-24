@@ -3,13 +3,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dna, FlaskConical, Thermometer, Plus, Trash2, AlertTriangle, FileCode, Info } from 'lucide-react';
+import { Dna, FlaskConical, Clock, Plus, Trash2, AlertTriangle, FileCode, Info } from 'lucide-react';
 import { BiTransferAlt } from 'react-icons/bi';
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import PCRProgram from './PCRProgram';
 import OEPCRCalculator from './OEPCRCalculator';
 import PCRProductGenerator from './PCRProductGenerator';
 import CopyTableButton from '@/components/shared/CopyTableButton';
@@ -101,102 +100,6 @@ const EXTENSION_SPEEDS = {
   'OneTaq': { simple: 60, complex: 60 },
   'DreamTaq': { simple: 60, complex: 60 },
   'Pfu Polymerase': { simple: 120, complex: 120 },
-};
-
-// Breslauer 1986 nearest-neighbor parameters
-// dH in cal/mol, dS in cal/mol·K
-const NN_DH = {
-  AA: -9100, TT: -9100, AT: -8600, TA: -6000,
-  CA: -5800, TG: -5800, GT: -6500, AC: -6500,
-  CT: -7800, AG: -7800, GA: -5600, TC: -5600,
-  CG: -11900, GC: -11100, GG: -11000, CC: -11000,
-};
-
-const NN_DS = {
-  AA: -24.0, TT: -24.0, AT: -23.9, TA: -16.9,
-  CA: -12.9, TG: -12.9, GT: -17.3, AC: -17.3,
-  CT: -20.8, AG: -20.8, GA: -13.5, TC: -13.5,
-  CG: -27.8, GC: -26.7, GG: -26.6, CC: -26.6,
-};
-
-const INIT_DH = 0;
-const INIT_DS = -10.8;
-const GAS_R = 1.987;
-const DEFAULT_PRIMER_CONC_M = 0.5e-6;
-const DEFAULT_NA_EQ_M = 50e-3;
-
-const sanitizeSeq = seq => (seq || '').toUpperCase().replace(/[^ATGC]/g, '');
-
-const revComp = seq =>
-  sanitizeSeq(seq)
-    .split('')
-    .reverse()
-    .map(b => ({ A: 'T', T: 'A', G: 'C', C: 'G' }[b]))
-    .join('');
-
-function findAnnealingRegion(primer, template) {
-  const p = sanitizeSeq(primer);
-  const t = sanitizeSeq(template);
-
-  if (!p || !t) return null;
-
-  for (let start = 0; start <= p.length - 8; start++) {
-    const suffix = p.slice(start);
-    if (t.includes(suffix) || t.includes(revComp(suffix))) {
-      return suffix;
-    }
-  }
-
-  return null;
-}
-
-function calcTm(seq, primerConcM = DEFAULT_PRIMER_CONC_M, naEqM = DEFAULT_NA_EQ_M) {
-  const s = sanitizeSeq(seq);
-  if (s.length < 7) return null;
-
-  if (s.length < 14) {
-    const at = (s.match(/[AT]/g) || []).length;
-    const gc = (s.match(/[GC]/g) || []).length;
-    return +(2 * at + 4 * gc).toFixed(1);
-  }
-
-  let dH = INIT_DH; // cal/mol
-  let dS = INIT_DS; // cal/mol/K
-
-  for (let i = 0; i < s.length - 1; i++) {
-    const key = s.slice(i, i + 2);
-    dH += NN_DH[key] ?? 0;
-    dS += NN_DS[key] ?? 0;
-  }
-
-  const deltaS = dS + 0.368 * (s.length - 1) * Math.log(naEqM);
-  const tmK = dH / (deltaS + GAS_R * Math.log(primerConcM / 4));
-  const tmC = tmK - 273.15;
-
-  return Number.isFinite(tmC) ? +tmC.toFixed(1) : null;
-}
-
-function calcTa(fwdTm, revTm) {
-  if (fwdTm == null || revTm == null) return null;
-  return +Math.min(fwdTm, revTm).toFixed(1);
-}
-
-const calcGC = seq => {
-  const s = sanitizeSeq(seq);
-  if (!s.length) return 0;
-  return +((((s.match(/[GC]/g) || []).length / s.length) * 100).toFixed(1));
-};
-
-const calcMW = seq => {
-  const s = sanitizeSeq(seq);
-  const mw = { A: 313.21, T: 304.19, G: 329.21, C: 289.18 };
-  return s.split('').reduce((sum, b) => sum + (mw[b] || 0), 0) - 61.96;
-};
-
-const calcExtCoeff = seq => {
-  const s = sanitizeSeq(seq);
-  const ec = { A: 15400, T: 8700, G: 11500, C: 7400 };
-  return s.split('').reduce((sum, b) => sum + (ec[b] || 0), 0);
 };
 
 function NumInput({ value, onChange, ...props }) {
@@ -298,14 +201,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
 
   const useBetaine = (parseFloat(betaineVol) || 0) > 0;
 
-  // ── Ta TAB ──
-  const [taFwdPrimer, setTaFwdPrimer] = useState(() => localStorage.getItem('bbb_pcr_ta_fwd') || '');
-  const [taRevPrimer, setTaRevPrimer] = useState(() => localStorage.getItem('bbb_pcr_ta_rev') || '');
-  const [taTemplate, setTaTemplate] = useState(() => localStorage.getItem('bbb_pcr_ta_template') || '');
-  const [taPolymerase, setTaPolymerase] = useState(() => localStorage.getItem('bbb_pcr_ta_poly') || 'Phusion High-Fidelity');
-  const [taPrimerConc, setTaPrimerConc] = useState(() => localStorage.getItem('bbb_pcr_ta_conc') || '0.5');
-  const [taResults, setTaResults] = useState(null);
-
   // Auto-save states to localStorage
   useEffect(() => {
     if (!isRestoring) {
@@ -325,17 +220,12 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
       localStorage.setItem('bbb_pcr_finalext', finalExtCustom);
       localStorage.setItem('bbb_pcr_annealtime', annealTimeCustom);
       localStorage.setItem('bbb_pcr_custext', customExtensionTime);
-      localStorage.setItem('bbb_pcr_ta_fwd', taFwdPrimer);
-      localStorage.setItem('bbb_pcr_ta_rev', taRevPrimer);
-      localStorage.setItem('bbb_pcr_ta_template', taTemplate);
-      localStorage.setItem('bbb_pcr_ta_poly', taPolymerase);
-      localStorage.setItem('bbb_pcr_ta_conc', taPrimerConc);
     }
   }, [
     tab, polymerase, totalVolume, primerConc, betaineVol, samples, primersIdentical,
     mastermixEnabled, reactionsInput, templateType, annealTemp, cycleCount,
     initDenatCustom, finalExtCustom, annealTimeCustom, customExtensionTime,
-    taFwdPrimer, taRevPrimer, taTemplate, taPolymerase, taPrimerConc, isRestoring
+    isRestoring
   ]);
 
   // Restore from history
@@ -411,27 +301,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
         setReactionsInput(d.reactionsInput);
         localStorage.setItem('bbb_pcr_reactions', d.reactionsInput);
       }
-      if (d.taFwdPrimer !== undefined) {
-        setTaFwdPrimer(d.taFwdPrimer);
-        localStorage.setItem('bbb_pcr_ta_fwd', d.taFwdPrimer);
-      }
-      if (d.taRevPrimer !== undefined) {
-        setTaRevPrimer(d.taRevPrimer);
-        localStorage.setItem('bbb_pcr_ta_rev', d.taRevPrimer);
-      }
-      if (d.taTemplate !== undefined) {
-        setTaTemplate(d.taTemplate);
-        localStorage.setItem('bbb_pcr_ta_template', d.taTemplate);
-      }
-      if (d.taPolymerase !== undefined) {
-        setTaPolymerase(d.taPolymerase);
-        localStorage.setItem('bbb_pcr_ta_poly', d.taPolymerase);
-      }
-      if (d.taPrimerConc !== undefined) {
-        setTaPrimerConc(d.taPrimerConc);
-        localStorage.setItem('bbb_pcr_ta_conc', d.taPrimerConc);
-      }
-
       setTimeout(() => setIsRestoring(false), 50);
     }
   }, [historyData]);
@@ -441,13 +310,7 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
     if (tab === 'mix') {
       preview = `PCR mix, ${samples.length} sample${samples.length > 1 ? 's' : ''}`;
     } else if (tab === 'program') {
-      const lengths = samples.map(s => parseFloat(s.productLength) || 0);
-      const longest = Math.max(...lengths, 0);
-      preview = `PCR program, max ${longest} bp, ${polymerase}`;
-    } else if (tab === 'ta') {
-      preview = taFwdPrimer
-        ? `Ta calculator, Fwd primer ${taFwdPrimer.slice(0, 8)}...`
-        : 'Ta calculator';
+      preview = `PCR program, ${polymerase}`;
     } else {
       preview = `PCR (${tab})`;
     }
@@ -475,11 +338,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
         finalExtCustom,
         annealTimeCustom,
         customExtensionTime,
-        taFwdPrimer,
-        taRevPrimer,
-        taTemplate,
-        taPolymerase,
-        taPrimerConc,
       }
     });
   };
@@ -580,61 +438,6 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
     return `${mins}m ${secs}s`;
   };
   const totalDurationStr = formatTotalDuration(totalProgramSecs);
-  // ── Ta calculation ──
-  useEffect(() => {
-    if (!taFwdPrimer && !taRevPrimer) {
-      setTaResults(null);
-      return;
-    }
-
-    const profile =
-    POLYMERASES[taPolymerase] ||
-    POLYMERASES['Phusion High-Fidelity'];
-
-    const primerConcM = (parseFloat(taPrimerConc) || 0.5) * 1e-6;
-    const naEqM = profile.naEqM ?? 0.05;
-
-    const fwdSeq = sanitizeSeq(taFwdPrimer);
-    const revSeq = sanitizeSeq(taRevPrimer);
-
-    const fwdBinding = taTemplate ? findAnnealingRegion(taFwdPrimer, taTemplate) : null;
-    const revBinding = taTemplate ? findAnnealingRegion(taRevPrimer, taTemplate) : null;
-
-    const fwdTm = calcTm(fwdBinding || fwdSeq, primerConcM, naEqM);
-    const revTm = calcTm(revBinding || revSeq, primerConcM, naEqM);
-
-    if (fwdTm == null || revTm == null) {
-      setTaResults(null);
-      return;
-    }
-
-    const ta = calcTa(fwdTm, revTm);
-
-    setTaResults({
-      ta,
-      polymerase: taPolymerase,
-      primerConc: parseFloat(taPrimerConc) || 0.5,
-
-      fwdTm,
-      revTm,
-      tmDiff: Math.abs(fwdTm - revTm),
-
-      fwdGC: calcGC(fwdBinding || fwdSeq),
-      revGC: calcGC(revBinding || revSeq),
-
-      fwdLen: fwdSeq.length,
-      revLen: revSeq.length,
-
-      fwdMW: calcMW(fwdSeq),
-      revMW: calcMW(revSeq),
-
-      fwdEC: calcExtCoeff(fwdSeq),
-      revEC: calcExtCoeff(revSeq),
-
-      fwdBinding,
-      revBinding,
-    });
-  }, [taFwdPrimer, taRevPrimer, taTemplate, taPolymerase, taPrimerConc]);
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 mb-2">
@@ -644,7 +447,7 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
           </div>
           <div>
             <h2 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">PCR Calculator</h2>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Mix calculator with mastermix support & Ta calculator</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Mix calculator with mastermix support &amp; PCR program</p>
           </div>
         </div>
         <SaveHistoryButton onSave={handleSaveToHistory} />
@@ -656,13 +459,13 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
             <FlaskConical className="w-4 h-4" />
             PCR Mix
           </TabsTrigger>
+          <TabsTrigger value="program" className="flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            PCR Program
+          </TabsTrigger>
           <TabsTrigger value="oepcr" className="flex items-center gap-2">
             <Dna className="w-4 h-4" />
             OE-PCR
-          </TabsTrigger>
-          <TabsTrigger value="ta" className="flex items-center gap-2">
-            <Thermometer className="w-4 h-4" />
-            Ta Calculator
           </TabsTrigger>
           <TabsTrigger value="product" className="flex items-center gap-2">
             <FileCode className="w-4 h-4" />
@@ -1095,165 +898,9 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
           <OEPCRCalculator isActive={isActive} />
         </TabsContent>
 
-        {/* ─── Ta CALCULATOR ─── */}
-        <TabsContent value="ta" forceMount className={tab === 'ta' ? 'mt-6' : 'hidden'}>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <Card className="border-0 shadow-sm bg-white dark:bg-white/10 backdrop-blur">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">Primer Sequences</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm text-slate-600 dark:text-slate-200">Forward Primer (5&apos;→3&apos;) — full sequence incl. overhang</Label>
-                    <Textarea
-                      value={taFwdPrimer}
-                      onChange={e => setTaFwdPrimer(e.target.value)}
-                      placeholder="Full primer sequence..."
-                      className="font-mono text-sm h-16 border-slate-200 dark:border-slate-700"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm text-slate-600 dark:text-slate-200">Reverse Primer (5&apos;→3&apos;) — full sequence incl. overhang</Label>
-                    <Textarea
-                      value={taRevPrimer}
-                      onChange={e => setTaRevPrimer(e.target.value)}
-                      placeholder="Full primer sequence..."
-                      className="font-mono text-sm h-16 border-slate-200 dark:border-slate-700"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm text-slate-600 dark:text-slate-200">Template Sequence (optional — for overhang-aware Tm)</Label>
-                    <Textarea
-                      value={taTemplate}
-                      onChange={e => setTaTemplate(e.target.value)}
-                      placeholder="Paste template sequence..."
-                      className="font-mono text-sm h-24 border-slate-200 dark:border-slate-700"
-                    />
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      If provided, only the binding region without overhangs is used for Tm calculation.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card className="border-0 shadow-sm bg-white dark:bg-white/10 backdrop-blur">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base font-medium text-slate-700 dark:text-slate-200">Settings</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label className="text-sm text-slate-600 dark:text-slate-200">Primer concentration, final (µM)</Label>
-                      <NumInput
-                        value={taPrimerConc}
-                        onChange={e => setTaPrimerConc(e.target.value)}
-                        className="border-slate-200 dark:border-slate-700"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-sm text-slate-600 dark:text-slate-200">Polymerase</Label>
-                      <Select value={taPolymerase} onValueChange={setTaPolymerase}>
-                        <SelectTrigger className="border-slate-200 dark:border-slate-700">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.keys(POLYMERASES).map(p => (
-                            <SelectItem key={p} value={p}>
-                              {p}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3 text-xs text-slate-500 dark:text-slate-400">
-                    Ta is estimated from the lower primer Tm, using the detected annealing region if a template is provided.
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            <div className="space-y-4">
-              {taResults ? (
-                <>
-                  <Card className="border-0 shadow-sm bg-gradient-to-br from-orange-50 to-amber-50">
-                    <CardContent className="p-6">
-                      <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-xl bg-orange-100">
-                          <Thermometer className="w-6 h-6 text-orange-600" />
-                        </div>
-                        <div>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">Recommended Annealing Temperature</p>
-                          <p className="text-4xl font-bold text-orange-600">{taResults.ta}°C</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            {taResults.polymerase} • {taResults.primerConc} µM primer
-                          </p>
-                        </div>
-                      </div>
-                      {taResults.tmDiff > 5 && (
-                        <div className="mt-3 p-2 bg-amber-100 rounded-lg text-xs text-amber-700 dark:text-amber-400">
-                          ⚠ Primer Tm difference &gt;5°C ({taResults.tmDiff.toFixed(1)}°C). Consider redesigning for better results.
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-0 shadow-sm bg-white dark:bg-slate-900">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-200">Primer Analysis</CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                      {[
-                        { label: 'Forward', primer: taFwdPrimer, tm: taResults.fwdTm, gc: taResults.fwdGC, len: taResults.fwdLen, mw: taResults.fwdMW, ec: taResults.fwdEC, binding: taResults.fwdBinding },
-                        { label: 'Reverse', primer: taRevPrimer, tm: taResults.revTm, gc: taResults.revGC, len: taResults.revLen, mw: taResults.revMW, ec: taResults.revEC, binding: taResults.revBinding },
-                      ].map(p => {
-                        const seq = p.primer.toUpperCase().replace(/[^ATGC]/g, '');
-                        const bindingStart = p.binding ? seq.lastIndexOf(p.binding) : -1;
-                        return (
-                          <div key={p.label} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
-                            <div className="flex items-center justify-between mb-2">
-                              <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{p.label} Primer</span>
-                            </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-500 dark:text-slate-400 mb-2">
-                              <span>Length: <strong>{Number.isFinite(Number(p.len)) ? p.len : '—'} nt</strong></span>
-                              <span>Tm: <strong>{typeof p.tm === 'number' ? `${p.tm}°C` : '—'}</strong></span>
-                              <span>GC: <strong>{Number.isFinite(Number(p.gc)) ? `${p.gc}%` : '—'}</strong></span>
-                              <span>Binding: <strong>{typeof p.binding === 'string' ? `${p.binding.length} nt` : '—'}</strong></span>
-                              <span>MW: <strong>{Number.isFinite(Number(p.mw)) ? Number(p.mw).toFixed(0) : '—'} Da</strong></span>
-                              <span>ε260: <strong>{Number.isFinite(Number(p.ec)) ? Number(p.ec).toLocaleString() : '—'}</strong></span>
-                            </div>
-                            {seq && (
-                              <div className="font-mono text-xs break-all leading-relaxed">
-                                {bindingStart > 0 && (
-                                  <span className="text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-0.5 rounded">{seq.slice(0, bindingStart)}</span>
-                                )}
-                                <span className="text-green-700 bg-green-100 px-0.5 rounded font-semibold">
-                                  {bindingStart >= 0 ? seq.slice(bindingStart) : seq}
-                                </span>
-                              </div>
-                            )}
-                            {taTemplate && !p.binding && (
-                              <div className="mt-1 text-xs text-amber-600">Could not find binding region — using full sequence for Tm</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </CardContent>
-                  </Card>
-                </>
-              ) : (
-                <div className="text-center py-16 text-slate-400 dark:text-slate-500">
-                  <Thermometer className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                  <p>Enter primer sequences to calculate Ta</p>
-                </div>
-              )}
-            </div>
-          </div>
+        {/* ─── PCR PROGRAM ─── */}
+        <TabsContent value="program" forceMount className={tab === 'program' ? 'mt-6' : 'hidden'}>
+          <PCRProgram isActive={isActive} />
         </TabsContent>
         {/* ─── Product Sequence ─── */}
         <TabsContent value="product" forceMount className={tab === 'product' ? 'mt-6' : 'hidden'}>

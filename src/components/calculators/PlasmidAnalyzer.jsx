@@ -1131,7 +1131,7 @@ function CircularMap({
 // ── Linear Map ────────────────────────────────────────────────────────────────
 function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapItem, selectedRange, rangeColor, onLabelClick, onLabelDoubleClick, onLabelHover, onLabelLeave, onLabelContextMenu, onEnzymeClick, onEnzymeHover, onEnzymeLeave, onEnzymeContextMenu, name }) {
   const totalLen = seq.length; if (!totalLen) return null;
-  const W = 820, H = 240, trackY = 110, FW = 18, ml = 40, mr = 780, mw = 740;
+  const W = 820, FW = 18, ml = 40, mr = 780, mw = 740;
   const xOf = pos => ml + (pos / totalLen) * mw;
 
   const isFeatureSelected = (feat, index) => {
@@ -1151,6 +1151,56 @@ function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapIte
     }
     return false;
   };
+
+  // Compute non-overlapping tiers for cut sites
+  const sortedCutSites = (cutSites || []).map((site, index) => {
+    const x = xOf(site.pos);
+    const label = site.name;
+    const width = Math.max(34, label.length * 6.5 + 8);
+    return {
+      site,
+      originalIndex: index,
+      x,
+      width,
+      pos: site.pos,
+      name: label,
+    };
+  }).sort((a, b) => a.x - b.x);
+
+  const minGap = 6;
+  const tiers = [];
+  const positionedSites = sortedCutSites.map((item) => {
+    const leftEdge = item.x - item.width / 2;
+    const rightEdge = item.x + item.width / 2;
+    let assignedTier = -1;
+    for (let t = 0; t < tiers.length; t++) {
+      if (leftEdge >= tiers[t] + minGap) {
+        assignedTier = t;
+        break;
+      }
+    }
+    if (assignedTier === -1) {
+      assignedTier = tiers.length;
+    }
+    tiers[assignedTier] = rightEdge;
+    const textX = Math.max(item.width / 2 + 6, Math.min(W - item.width / 2 - 6, item.x));
+    return {
+      ...item,
+      tier: assignedTier,
+      textX,
+    };
+  });
+
+  const maxTier = positionedSites.length > 0 ? Math.max(0, ...positionedSites.map(s => s.tier)) : 0;
+  const tierStep = 20;
+  const extraTop = maxTier * tierStep;
+  const trackY = 110 + extraTop;
+  const H = 240 + extraTop;
+
+  const sitesWithY = positionedSites.map(item => ({
+    ...item,
+    labelY: trackY - FW - 14 - item.tier * tierStep,
+  }));
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto' }}>
@@ -1193,13 +1243,58 @@ function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapIte
           </g>
         );
       })}
-      {cutSites.map((site, i) => {
-        const x = xOf(site.pos);
+      {/* Cut site lines */}
+      {sitesWithY.map(({ site, originalIndex, x, labelY }) => {
         const selected = isEnzymeSelected(site);
         return (
-          <g key={`${site.name}-${site.pos}-${i}`} cursor="pointer" onClick={(e) => onEnzymeClick?.(e, site, i)} onContextMenu={(e) => onEnzymeContextMenu?.(e, site, i)} onMouseEnter={(e) => onEnzymeHover?.(e, site, i)} onMouseLeave={onEnzymeLeave}>
-            <line x1={x} y1={trackY - FW - 9} x2={x} y2={trackY + FW + 9} stroke={selected ? '#0f766e' : site.color || '#111827'} strokeWidth={selected ? 3 : 1.7} />
-            <text x={x} y={trackY - FW - 16} textAnchor="middle" fill={site.color || '#111827'} fontSize="10" fontWeight="700" fontFamily={MAP_LABEL_FONT_FAMILY} fontStyle="italic">{site.name}</text>
+          <line
+            key={`line-${site.name}-${site.pos}-${originalIndex}`}
+            x1={x}
+            y1={labelY + 3}
+            x2={x}
+            y2={trackY + FW + 9}
+            stroke={selected ? '#0f766e' : site.color || '#111827'}
+            strokeWidth={selected ? 3 : 1.7}
+            pointerEvents="none"
+          />
+        );
+      })}
+      {/* Cut site labels and interactive target */}
+      {sitesWithY.map(({ site, originalIndex, x, textX, labelY }) => {
+        const selected = isEnzymeSelected(site);
+        return (
+          <g
+            key={`label-${site.name}-${site.pos}-${originalIndex}`}
+            cursor="pointer"
+            onClick={(e) => onEnzymeClick?.(e, site, originalIndex)}
+            onContextMenu={(e) => onEnzymeContextMenu?.(e, site, originalIndex)}
+            onMouseEnter={(e) => onEnzymeHover?.(e, site, originalIndex)}
+            onMouseLeave={onEnzymeLeave}
+          >
+            <line
+              x1={x}
+              y1={labelY + 3}
+              x2={x}
+              y2={trackY + FW + 9}
+              stroke="transparent"
+              strokeWidth="12"
+            />
+            <text
+              x={textX}
+              y={labelY}
+              textAnchor="middle"
+              fill={selected ? '#0f766e' : site.color || '#111827'}
+              stroke="#ffffff"
+              strokeWidth="3.5"
+              strokeLinejoin="round"
+              paintOrder="stroke fill"
+              fontSize="10"
+              fontWeight="700"
+              fontFamily={MAP_LABEL_FONT_FAMILY}
+              fontStyle="italic"
+            >
+              {site.name}
+            </text>
           </g>
         );
       })}
@@ -1209,12 +1304,14 @@ function LinearMap({ onMapPositionClick, seq, features, cutSites, selectedMapIte
 }
 
 // ── Tab helpers ────────────────────────────────────────────────────────────────
-const newEmptyTab = (name = '') => ({
+const newEmptyTab = (name = '', isCircular = true, mapLayout = undefined) => ({
   id: `tab_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
   seqName: name,
   rawInput: '',
   sequence: '',
-  isCircular: true,
+  isCircular,
+  mapLayout: mapLayout || (isCircular ? 'circular' : 'linear'),
+  splitView: false,
   features: [],
   primers: [],
   sequenceColors: [],
@@ -1503,7 +1600,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     setPhase('input');
     setOpenTabs(prev => [
       ...prev.map(t => t.id === activeTabId
-        ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId }
+        ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId, mapLayout, splitView }
         : t
       ),
       tab,
@@ -1621,11 +1718,24 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       setPrimers(active.primers || []);
       setSequenceColors(active.sequenceColors || []);
       setSelectedEnzymes(active.selectedEnzymes || {});
-      setIsCircular(active.isCircular ?? true);
+      const isCirc = active.isCircular !== undefined ? !!active.isCircular : (active.metadata?.topology !== 'linear');
+      setIsCircular(isCirc);
+      setMapLayout(active.mapLayout || (isCirc ? 'circular' : 'linear'));
+      if (active.splitView !== undefined) setSplitView(active.splitView);
     }
     setOpenTabs(tabs => tabs.map(tab => {
       const entry = nextLibrary.find(item => item.id === tab.activeEntryId);
-      return entry ? { ...tab, ...entry, id: tab.id, seqName: entry.name, rawInput: entry.sequence } : tab;
+      if (!entry) return tab;
+      const isCirc = entry.isCircular !== undefined ? !!entry.isCircular : (entry.metadata?.topology !== 'linear');
+      return { 
+        ...tab, 
+        ...entry, 
+        id: tab.id, 
+        seqName: entry.name, 
+        rawInput: entry.sequence,
+        isCircular: isCirc,
+        mapLayout: tab.mapLayout || entry.mapLayout || (isCirc ? 'circular' : 'linear')
+      };
     }));
     setLibrary(nextLibrary);
     saveUserLib(user.id, nextLibrary);
@@ -1743,14 +1853,17 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     if (!tab || tabId === activeTabId) return;
     // Save current tab state first
     setOpenTabs(prev => prev.map(t => t.id === activeTabId
-      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId }
+      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId, mapLayout, splitView }
       : t
     ));
     setActiveTabId(tabId);
     setSeqName(tab.seqName);
     setSequence(tab.sequence);
     setRawInput(tab.rawInput || tab.sequence);
-    setIsCircular(tab.isCircular);
+    const tabIsCirc = tab.isCircular !== undefined ? !!tab.isCircular : true;
+    setIsCircular(tabIsCirc);
+    setMapLayout(tab.mapLayout || (tabIsCirc ? 'circular' : 'linear'));
+    if (tab.splitView !== undefined) setSplitView(tab.splitView);
     setFeatures(tab.features);
     setPrimers(normalizePrimersAgainstSequence(tab.primers, tab.sequence));
     setSequenceColors(tab.sequenceColors || []);
@@ -1984,12 +2097,22 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
   const _filteredEnzymes = useMemo(() => {
     return Object.entries(RE_DB).map(([name, details]) => {
       const meta = getEnzymeMeta(name, details);
-      return { name, count: (allCutSites[name] || []).length, ...meta };
+      return {
+        name,
+        count: (allCutSites[name] || []).length,
+        cutType: meta.cut,
+        motif: details.seq,
+        hasFD: details.hasFD,
+        ...meta,
+      };
     })
       .filter((enzyme) => {
-        return enzymeMatchesFilters(enzyme, enzymeFilter, enzymeSupplierFilter) && enzyme.name.toLowerCase().includes(enzymeSearch.toLowerCase());
+        if (selectedMapItem?.kind === 'enzyme' && selectedMapItem.name === enzyme.name) return true;
+        const q = enzymeSearch.toLowerCase();
+        if (q && !enzyme.name.toLowerCase().includes(q)) return false;
+        return enzymeMatchesFilters(enzyme, enzymeFilter, enzymeSupplierFilter);
       });
-  }, [allCutSites, enzymeFilter, enzymeSearch, enzymeSupplierFilter]);
+  }, [allCutSites, enzymeFilter, enzymeSearch, enzymeSupplierFilter, selectedMapItem]);
 
   const activeCutSites = useMemo(() => {
     if (!mapLayerVisibility.enzymes) return [];
@@ -2165,20 +2288,25 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
         const now = new Date().toISOString();
         const parent = library.find(i => i.id === targetParentId);
         const defaultColor = parent ? parent.color : '#475569';
+        const isCirc = parsed.isCircular ?? true;
         const entry = {
           id: `file_${Date.now()}_0`,
           name,
           sequence: parsed.sequence,
           features: parsed.features,
           sequenceColors: [],
-          isCircular: parsed.isCircular ?? true,
+          isCircular: isCirc,
+          mapLayout: isCirc ? 'circular' : 'linear',
           selectedEnzymes: {},
           primers: parsed.primers,
           dateAdded: now,
           dateEdited: now,
           parentId: targetParentId,
           color: defaultColor,
-          metadata: defaultPlasmidMetadata(),
+          metadata: {
+            ...defaultPlasmidMetadata(),
+            topology: isCirc ? 'circular' : 'linear',
+          },
           type: 'file'
         };
         const next = [entry, ...library.filter(item => item.id !== entry.id)].slice(0, 80);
@@ -2195,20 +2323,25 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       const entries = loaded.map(({ file, text }, index) => {
         const parsed = parseImportedSequence(file.name, text);
         const name = parsed.name || file.name.replace(/\.[^.]+$/, '') || `Sequence ${index + 1}`;
+        const isCirc = parsed.isCircular ?? true;
         return {
           id: `file_${Date.now()}_${index}`,
           name,
           sequence: parsed.sequence,
           features: parsed.features,
           sequenceColors: [],
-          isCircular: parsed.isCircular ?? true,
+          isCircular: isCirc,
+          mapLayout: isCirc ? 'circular' : 'linear',
           selectedEnzymes: {},
           primers: parsed.primers,
           dateAdded: now,
           dateEdited: now,
           parentId: targetParentId,
           color: defaultColor,
-          metadata: defaultPlasmidMetadata(),
+          metadata: {
+            ...defaultPlasmidMetadata(),
+            topology: isCirc ? 'circular' : 'linear',
+          },
           type: 'file'
         };
       }).filter(entry => entry.sequence);
@@ -2245,6 +2378,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const nextSequenceColors = sequenceUnchanged ? sequenceColors : [];
     const nextSelectedEnzymes = sequenceUnchanged ? selectedEnzymes : (currentEntry?.selectedEnzymes || {});
     const nextIsCircular = parsed.isCircular ?? currentEntry?.isCircular ?? isCircular;
+    const nextMapLayout = nextIsCircular ? 'circular' : 'linear';
 
     setSeqName(name);
     setSequence(parsed.sequence);
@@ -2252,6 +2386,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     setPrimers(primersWithId);
     setSequenceColors(nextSequenceColors);
     setIsCircular(nextIsCircular);
+    setMapLayout(nextMapLayout);
     setSelectedEnzymes(nextSelectedEnzymes);
     setSelectedFeatureIdx(null);
     setSelectedMapItem(null);
@@ -2268,17 +2403,25 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       features: featuresWithId,
       sequenceColors: nextSequenceColors,
       isCircular: nextIsCircular,
+      mapLayout: nextMapLayout,
       selectedEnzymes: nextSelectedEnzymes,
       primers: primersWithId,
       dateAdded: currentEntry?.dateAdded || new Date().toISOString(),
       dateEdited: new Date().toISOString(),
       parentId: targetParentId,
       color: currentEntry?.color || defaultColor,
-      metadata: currentEntry?.metadata || defaultPlasmidMetadata(),
+      metadata: {
+        ...(currentEntry?.metadata || defaultPlasmidMetadata()),
+        topology: nextIsCircular ? 'circular' : 'linear',
+      },
       type: 'file'
     };
     setActiveEntryId(entry.id);
     setInfoEntryId(entry.id);
+    setOpenTabs(prev => prev.map(t => t.id === activeTabId 
+      ? { ...t, seqName: name, sequence: parsed.sequence, rawInput: text, isCircular: nextIsCircular, mapLayout: nextMapLayout, features: featuresWithId, primers: primersWithId } 
+      : t
+    ));
     setLibrary(prev => {
       const updated = currentEntry
         ? prev.map(item => item.id === currentEntry.id ? entry : item)
@@ -2297,11 +2440,14 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     if (existing) { switchToTab(existing.id); return; }
     // Save current tab state
     setOpenTabs(prev => prev.map(t => t.id === activeTabId
-      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId }
+      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId, mapLayout, splitView }
       : t
     ));
+    // Determine isCircular and mapLayout from entry
+    const isCirc = entry.isCircular !== undefined ? !!entry.isCircular : (entry.metadata?.topology !== 'linear');
+    const defaultLayout = entry.mapLayout || (isCirc ? 'circular' : 'linear');
     // Open in new tab
-    const tab = newEmptyTab(entry.name);
+    const tab = newEmptyTab(entry.name, isCirc, defaultLayout);
     const feats = (entry.features || []).map(f => ({ ...f, visible: f.visible ?? true }));
     const newTab = { 
       ...tab, 
@@ -2310,7 +2456,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
       rawInput: entry.sequence, 
       features: feats, 
       sequenceColors: entry.sequenceColors || [],
-      isCircular: entry.isCircular ?? true, 
+      isCircular: isCirc, 
+      mapLayout: defaultLayout,
+      splitView: entry.splitView ?? false,
       selectedEnzymes: entry.selectedEnzymes || {}, 
       primers: normalizePrimersAgainstSequence(entry.primers || [], entry.sequence),
       viewMode: 'map',
@@ -2321,7 +2469,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     setSeqName(entry.name);
     setSequence(entry.sequence);
     setRawInput(entry.sequence);
-    setIsCircular(entry.isCircular ?? true);
+    setIsCircular(isCirc);
+    setMapLayout(defaultLayout);
+    setSplitView(entry.splitView ?? false);
     setFeatures(feats);
     setPrimers(normalizePrimersAgainstSequence(entry.primers || [], entry.sequence));
     setSequenceColors(entry.sequenceColors || []);
@@ -2335,20 +2485,24 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
 
   const openTemporaryFile = (entry) => {
     if (!entry?.sequence) return;
-    const tempEntry = { ...entry, isTemporary: true, activeEntryId: null };
+    const isCirc = entry.isCircular !== undefined ? !!entry.isCircular : (entry.metadata?.topology !== 'linear');
+    const defaultLayout = entry.mapLayout || (isCirc ? 'circular' : 'linear');
+    const tempEntry = { ...entry, isCircular: isCirc, mapLayout: defaultLayout, isTemporary: true, activeEntryId: null };
     setOtherFiles(prev => prev.some(item => item.id === tempEntry.id) ? prev : [...prev, tempEntry]);
     setOpenTabs(prev => prev.map(t => t.id === activeTabId
-      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId }
+      ? { ...t, seqName, sequence, rawInput, isCircular, features, primers, sequenceColors, selectedEnzymes, viewMode, activeEntryId, mapLayout, splitView }
       : t
     ));
     const tab = {
-      ...newEmptyTab(tempEntry.name),
+      ...newEmptyTab(tempEntry.name, isCirc, defaultLayout),
       seqName: tempEntry.name,
       sequence: tempEntry.sequence,
       rawInput: tempEntry.rawInput || tempEntry.sequence,
       features: (tempEntry.features || []).map(f => ({ ...f, visible: f.visible ?? true })),
       sequenceColors: tempEntry.sequenceColors || [],
-      isCircular: tempEntry.isCircular ?? true,
+      isCircular: isCirc,
+      mapLayout: defaultLayout,
+      splitView: tempEntry.splitView ?? false,
       selectedEnzymes: tempEntry.selectedEnzymes || {},
       primers: normalizePrimersAgainstSequence(tempEntry.primers || [], tempEntry.sequence),
       viewMode: 'map',
@@ -2360,7 +2514,9 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     setSeqName(tab.seqName);
     setSequence(tab.sequence);
     setRawInput(tab.rawInput);
-    setIsCircular(tab.isCircular);
+    setIsCircular(isCirc);
+    setMapLayout(defaultLayout);
+    setSplitView(tempEntry.splitView ?? false);
     setFeatures(tab.features);
     setPrimers(normalizePrimersAgainstSequence(tab.primers, tab.sequence));
     setSequenceColors(tab.sequenceColors);
@@ -2487,12 +2643,15 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
     const extraUpdates = {};
     if (updates.topology !== undefined) {
       extraUpdates.isCircular = updates.topology === 'circular';
+      extraUpdates.mapLayout = updates.topology === 'circular' ? 'circular' : 'linear';
     }
     updateLibraryItem(targetId, { metadata: newMetadata, ...extraUpdates });
     if ((targetId === activeEntryId || !infoEntryId) && updates.topology !== undefined) {
       const isCirc = updates.topology === 'circular';
+      const layout = isCirc ? 'circular' : 'linear';
       setIsCircular(isCirc);
-      setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, isCircular: isCirc } : t));
+      setMapLayout(layout);
+      setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, isCircular: isCirc, mapLayout: layout } : t));
     }
   };
   const addReference = () => {
@@ -3380,11 +3539,13 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 value={infoLibraryEntry.isCircular === false || metadata.topology === 'linear' ? 'linear' : 'circular'}
                 onChange={e => {
                   const isCirc = e.target.value === 'circular';
+                  const layout = isCirc ? 'circular' : 'linear';
                   updateActiveMetadata({ topology: e.target.value });
-                  updateActiveLibraryItem({ isCircular: isCirc });
+                  updateActiveLibraryItem({ isCircular: isCirc, mapLayout: layout });
                   if (infoLibraryEntry.id === activeEntryId || !infoEntryId) {
                     setIsCircular(isCirc);
-                    setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, isCircular: isCirc } : t));
+                    setMapLayout(layout);
+                    setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, isCircular: isCirc, mapLayout: layout } : t));
                   }
                 }}
                 className="h-9 w-full rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
@@ -5055,7 +5216,13 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
             <div className="flex gap-3 items-center flex-wrap">
               <Input value={seqName} onChange={e => setSeqName(e.target.value)} placeholder="Sequence name..." className="flex-1 min-w-40 border-slate-200" />
               <div className="flex items-center gap-2 flex-shrink-0">
-                <Switch checked={isCircular} onCheckedChange={setIsCircular} />
+                <Switch 
+                  checked={isCircular} 
+                  onCheckedChange={val => {
+                    setIsCircular(val);
+                    setMapLayout(val ? 'circular' : 'linear');
+                  }} 
+                />
                 <span className="text-sm text-slate-500 whitespace-nowrap">{isCircular ? 'Circular' : 'Linear'}</span>
               </div>
             </div>
@@ -5405,9 +5572,45 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                 {viewMode === 'map' && (
                   <div className="relative" style={{ height: splitView ? `calc(${splitRatio}% - 3px)` : '100%', minHeight: 0 }}>
                   <div className="absolute right-3 top-3 z-40 flex items-center gap-0.5 rounded-xl bg-slate-200/90 p-0.5">
-                    <button title="Circular map view" aria-pressed={mapLayout === 'circular'} onClick={() => { setMapLayout('circular'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'circular' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><BiDoughnutChart className="h-4 w-4" /></button>
-                    <button title="Linear map view" aria-pressed={mapLayout === 'linear'} onClick={() => { setMapLayout('linear'); setViewMode('map'); }} className={`rounded border p-1 ${mapLayout === 'linear' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><span className="block w-4 text-center leading-4">↔</span></button>
-                    <button title="Split map and sequence" aria-pressed={splitView} onClick={() => { setSplitView(value => !value); setViewMode('map'); }} className={`rounded border p-1 ${splitView ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}><span className="block w-4 text-center leading-4">▤</span></button>
+                    <button 
+                      title="Circular map view" 
+                      aria-pressed={mapLayout === 'circular'} 
+                      onClick={() => { 
+                        setMapLayout('circular'); 
+                        setViewMode('map'); 
+                        setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, mapLayout: 'circular' } : t));
+                      }} 
+                      className={`rounded border p-1 ${mapLayout === 'circular' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <BiDoughnutChart className="h-4 w-4" />
+                    </button>
+                    <button 
+                      title="Linear map view" 
+                      aria-pressed={mapLayout === 'linear'} 
+                      onClick={() => { 
+                        setMapLayout('linear'); 
+                        setViewMode('map'); 
+                        setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, mapLayout: 'linear' } : t));
+                      }} 
+                      className={`rounded border p-1 ${mapLayout === 'linear' ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <span className="block w-4 text-center leading-4">↔</span>
+                    </button>
+                    <button 
+                      title="Split map and sequence" 
+                      aria-pressed={splitView} 
+                      onClick={() => { 
+                        setSplitView(value => {
+                          const next = !value;
+                          setOpenTabs(prev => prev.map(t => t.id === activeTabId ? { ...t, splitView: next } : t));
+                          return next;
+                        }); 
+                        setViewMode('map'); 
+                      }} 
+                      className={`rounded border p-1 ${splitView ? 'bg-white text-teal-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      <span className="block w-4 text-center leading-4">▤</span>
+                    </button>
                   </div>
                   <div className="absolute left-4 top-3 z-30 flex overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <button
@@ -6572,7 +6775,39 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                       <table className="w-full text-xs">
                         <thead className="sticky top-0 bg-white z-10">
                           <tr className="border-b border-slate-100">
-                            <th className="text-left py-1.5 px-1 text-slate-500 font-semibold w-6"><input aria-label="Select all enzymes" type="checkbox" checked={_filteredEnzymes.length > 0 && _filteredEnzymes.every(e => !!selectedEnzymes[e.name])} onChange={event => { const checked = event.target.checked; setSelectedEnzymes(prev => { const next = { ...prev }; _filteredEnzymes.forEach(({ name }) => { if (checked) next[name] = next[name] || { color: null }; else delete next[name]; }); return next; }); }} /></th>
+                            <th className="text-left py-1.5 px-1 text-slate-500 font-semibold w-6">
+                              {(() => {
+                                const isAllSelected = _filteredEnzymes.length > 0 && _filteredEnzymes.every(e => !!selectedEnzymes[e.name]);
+                                const isSomeSelected = _filteredEnzymes.some(e => !!selectedEnzymes[e.name]);
+                                return (
+                                  <input
+                                    ref={el => {
+                                      if (el) el.indeterminate = isSomeSelected && !isAllSelected;
+                                    }}
+                                    aria-label="Select all enzymes"
+                                    type="checkbox"
+                                    checked={isAllSelected}
+                                    onChange={() => {
+                                      setSelectedEnzymes(prev => {
+                                        const next = { ...prev };
+                                        if (isAllSelected) {
+                                          _filteredEnzymes.forEach(({ name }) => {
+                                            delete next[name];
+                                          });
+                                        } else {
+                                          _filteredEnzymes.forEach(({ name }) => {
+                                            next[name] = next[name] || { color: null };
+                                          });
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                                    title={isAllSelected ? "Deselect all visible enzymes" : "Select all visible enzymes"}
+                                  />
+                                );
+                              })()}
+                            </th>
                             <th className="text-left py-1.5 px-1 text-slate-500 font-semibold">Enzyme</th>
                             <th className="text-center py-1.5 px-1 text-slate-500 font-semibold w-8"></th>
                             <th className="text-center py-1.5 px-1 text-slate-500 font-semibold w-10">Cuts</th>
@@ -6580,48 +6815,32 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {(() => {
-                            const withCounts = Object.keys(RE_DB).map(name => {
-                              const details = RE_DB[name];
-                              const motif = details.seq;
-                              const count = seq ? (() => {
-                                const re = new RegExp(motif.replace(/N/g, '[ATGC]').replace(/R/, '[AG]').replace(/Y/, '[CT]').replace(/W/, '[AT]').replace(/M/, '[AC]').replace(/K/, '[GT]').replace(/S/, '[GC]').replace(/B/, '[CGT]').replace(/D/, '[AGT]').replace(/H/, '[ACT]').replace(/V/, '[ACG]'), 'gi');
-                                return (seq.match(re) || []).length;
-                              })() : 0;
-                              const meta = getEnzymeMeta(name, details);
-                              return { name, count, cutType: meta.cut, motif, hasFD: details.hasFD, typeIIS: meta.typeIIS, goldenGate: meta.goldenGate, supplier: meta.supplier, supplierIds: meta.supplierIds };
-                            });
-
-                            const filtered = withCounts.filter((enzyme) => {
-                              const { name } = enzyme;
-                              if (selectedMapItem?.kind === 'enzyme' && selectedMapItem.name === name) return true;
-                              const q = enzymeSearch.toLowerCase();
-                              if (q && !name.toLowerCase().includes(q)) return false;
-                              return enzymeMatchesFilters(enzyme, enzymeFilter, enzymeSupplierFilter);
-                            });
-
-                            if (filtered.length === 0) return (
-                              <tr><td colSpan={5} className="text-center text-slate-400 py-6 text-xs">No enzymes found</td></tr>
-                            );
-
-                            return filtered.map(({ name, count, cutType, hasFD: _hasFD }) => {
+                          {_filteredEnzymes.length === 0 ? (
+                            <tr><td colSpan={5} className="text-center text-slate-400 py-6 text-xs">No enzymes found</td></tr>
+                          ) : (
+                            _filteredEnzymes.map(({ name, count, cutType }) => {
                               const isSel = !!selectedEnzymes[name];
                               const isMapFocused = selectedMapItem?.kind === 'enzyme' && selectedMapItem.name === name;
                               const color = isSel ? selectedEnzymes[name].color : null;
                               return (
-                                <tr key={name}
+                                <tr
+                                  key={name}
                                   data-map-selection-key={`enzyme:${name}`}
-                                  className={`border-b border-slate-50 transition-colors ${isMapFocused ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : isSel ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}>
-                                  <td className="py-1 px-1">
+                                  className={`border-b border-slate-50 transition-colors ${isMapFocused ? 'bg-teal-50 ring-1 ring-inset ring-teal-300' : isSel ? 'bg-rose-50/50' : 'hover:bg-slate-50'}`}
+                                  onClick={() => {
+                                    setSelectedMapItem({ kind: 'enzyme', name });
+                                  }}
+                                >
+                                  <td className="py-1 px-1" onClick={e => e.stopPropagation()}>
                                     <input
                                       type="checkbox"
                                       checked={isSel}
                                       onChange={e => setEnzymeSelected(name, e.target.checked)}
-                                      className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+                                      className="h-3.5 w-3.5 rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
                                       title="Show enzyme on map"
                                     />
                                   </td>
-                                  <td className="py-1 px-1">
+                                  <td className="py-1 px-1 cursor-pointer">
                                     <span
                                       className={`rounded px-1 font-medium ${color ? 'font-bold' : isSel ? 'text-slate-900' : 'text-slate-700'}`}
                                       style={color ? { backgroundColor: `${color}30`, color } : undefined}
@@ -6629,7 +6848,7 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                       {getEnzymeDisplayName(name)}
                                     </span>
                                   </td>
-                                  <td className="py-1 px-1 text-center">
+                                  <td className="py-1 px-1 text-center" onClick={e => e.stopPropagation()}>
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
@@ -6650,42 +6869,24 @@ export default function PlasmidAnalyzer({ historyData, isActive, settings }) {
                                       <LuHighlighter className="relative z-10 h-3.5 w-3.5" style={color ? { color } : undefined} />
                                     </button>
                                   </td>
-                                  <td className="py-1 px-1 text-center">
+                                  <td className="py-1 px-1 text-center cursor-pointer">
                                     <span className={`font-bold text-xs px-1.5 py-0.5 rounded ${count === 0 ? 'bg-slate-100 text-slate-400' :
                                         count === 1 ? 'bg-emerald-100 text-emerald-700' :
                                           count === 2 ? 'bg-amber-100 text-amber-700' :
                                             'bg-rose-100 text-rose-700'
                                       }`}>{count}×</span>
                                   </td>
-                                  <td className="py-1 px-1">
+                                  <td className="py-1 px-1 cursor-pointer">
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${cutType === 'Blunt' ? 'bg-slate-100 text-slate-600' : 'bg-indigo-50 text-indigo-600'
                                       }`}>{cutType}</span>
                                   </td>
                                 </tr>
                               );
-                            });
-                          })()}
+                            })
+                          )}
                         </tbody>
                       </table>
                     </div>
-                    {Object.keys(selectedEnzymes).length > 0 && (
-                      <div className="pt-2 border-t border-slate-100">
-                        <p className="text-xs font-medium text-slate-600 mb-1">On map:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(selectedEnzymes).map(([name, { color }]) => (
-                            <span
-                              key={name}
-                              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
-                              style={color
-                                ? { background: `${color}22`, color, borderColor: `${color}55` }
-                                : { background: '#ffffff', color: '#111827', borderColor: '#cbd5e1' }}
-                            >
-                              {getEnzymeDisplayName(name)}<button onClick={() => toggleEnzyme(name)}><X className="w-2.5 h-2.5" /></button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
