@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, Suspense, lazy, Component } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy, Component } from 'react';
 import {
   ArrowLeft, BookOpen,
   Settings, PanelLeft, ChevronDown, Clock, Trash2,
@@ -23,6 +23,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
 import logo from '@/assets/icon-512.png';
 import { AccountRequired } from '@/components/tools/toolUtils';
+import { rankToolSearchResults } from '@/lib/toolSearch';
 
 // Eagerly loaded calculators
 import DigestCalculator from '@/components/calculators/DigestCalculator';
@@ -201,6 +202,48 @@ const TOOL_GROUPS = [
 
 const HOME_LAB_TOOLS = TOOL_GROUPS[0].tools;
 const HOME_GENERAL_TOOLS = TOOL_GROUPS[1].tools;
+const SEARCHABLE_TOOLS = [...CALCULATORS, ...TOOL_GROUPS.flatMap(group => group.tools)];
+const TOOL_BY_ID = new Map(SEARCHABLE_TOOLS.map(tool => [tool.id, tool]));
+
+const TOOL_SEARCH_ITEMS = [
+  ...CALCULATORS.map(tool => ({ ...tool, toolId: tool.id, label: tool.name, category: 'Calculators' })),
+  ...TOOL_GROUPS.flatMap(group => group.tools.map(tool => ({
+    ...tool,
+    toolId: tool.id,
+    label: tool.name,
+    category: group.label,
+  }))),
+  ...Object.entries(TOOL_TABS).flatMap(([toolId, tabs]) => {
+    const parent = TOOL_BY_ID.get(toolId);
+    const category = CALCULATORS.some(tool => tool.id === toolId)
+      ? 'Calculators'
+      : TOOL_GROUPS.find(group => group.tools.some(tool => tool.id === toolId))?.label || 'Tool';
+    return tabs.map(tab => ({
+      toolId,
+      tabId: tab.id,
+      label: tab.label,
+      parentLabel: parent?.name || toolId,
+      category,
+    }));
+  }),
+].map(item => ({
+  ...item,
+  keywords: {
+    digest: 'restriction enzyme dna digest multiple batch',
+    ligation: 'vector insert dna cloning batch',
+    gibson: 'assembly fragments cloning batch',
+    pcr: 'polymerase chain reaction primers thermocycler',
+    dilution: 'concentration c1v1 serial sample volume',
+    protein: 'bca assay sds page sample prep concentration',
+    gel: 'electrophoresis dna western blot bands',
+    plasmid: 'sequence dna alignment map analyzer',
+    plates: 'plate labeler wells samples',
+    notes: 'notebook writing',
+    agenda: 'calendar planning',
+    protocols: 'library ai methods',
+    buffer: 'medium recipe chemistry',
+  }[item.toolId] || '',
+}));
 
 // ── All tool IDs to keep mounted ─────────────────────────────────────────────
 const ALL_IDS = [
@@ -595,6 +638,115 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
   );
 }
 
+function ToolFinder({ open, onClose, onSelect, isDark, isMobile, labels }) {
+  const [query, setQuery] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef(null);
+  const results = useMemo(() => rankToolSearchResults(TOOL_SEARCH_ITEMS, query), [query]);
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery('');
+    setSelectedIndex(0);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [open]);
+
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
+
+  if (!open) return null;
+
+  const choose = item => {
+    onSelect(item);
+    onClose();
+  };
+
+  const handleKeyDown = event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onClose();
+    } else if (event.key === 'ArrowDown' && results.length) {
+      event.preventDefault();
+      setSelectedIndex(index => (index + 1) % results.length);
+    } else if (event.key === 'ArrowUp' && results.length) {
+      event.preventDefault();
+      setSelectedIndex(index => (index - 1 + results.length) % results.length);
+    } else if (event.key === 'Enter' && results[selectedIndex]) {
+      event.preventDefault();
+      choose(results[selectedIndex]);
+    }
+  };
+
+  return (
+    <div
+      className={`fixed inset-0 z-[120] flex justify-center bg-slate-950/55 px-3 backdrop-blur-sm ${isMobile ? 'items-start pt-16' : 'items-start pt-[14vh]'}`}
+      onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
+      role="presentation"
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={labels.toolFinder}
+        className={`w-full max-w-xl overflow-hidden rounded-2xl border shadow-2xl ${isDark ? 'border-white/10 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-900'}`}
+        onKeyDown={handleKeyDown}
+      >
+        <div className={`flex items-center gap-3 border-b px-4 ${isDark ? 'border-white/10' : 'border-slate-200'}`}>
+          <Search className={`h-5 w-5 shrink-0 ${isDark ? 'text-white/45' : 'text-slate-400'}`} />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            aria-label={labels.searchTools}
+            placeholder={labels.searchTools}
+            className="h-14 min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-slate-400"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery('')} className={`rounded-lg p-2 ${isDark ? 'text-white/45 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`} aria-label={labels.clearSearch}>
+              <X className="h-4 w-4" />
+            </button>
+          )}
+          {!isMobile && <kbd className={`rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${isDark ? 'border-white/10 bg-white/5 text-white/40' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>ESC</kbd>}
+        </div>
+
+        <div className="max-h-[min(60vh,30rem)] overflow-y-auto p-2" role="listbox" aria-label={labels.searchResults}>
+          {!query && <p className={`px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-white/35' : 'text-slate-400'}`}>{labels.quickAccess}</p>}
+          {results.length ? results.map((item, index) => {
+            const Icon = item.icon || TOOL_BY_ID.get(item.toolId)?.icon;
+            const isSelected = index === selectedIndex;
+            return (
+              <button
+                key={`${item.toolId}-${item.tabId || 'root'}`}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onMouseEnter={() => setSelectedIndex(index)}
+                onClick={() => choose(item)}
+                className={`flex min-h-[52px] w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors ${isSelected ? (isDark ? 'bg-white/10' : 'bg-slate-100') : (isDark ? 'hover:bg-white/5' : 'hover:bg-slate-50')}`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${item.gradient || 'from-slate-500 to-slate-700'}`}>
+                  {Icon && <Icon className="h-4 w-4 text-white" />}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold">{item.label}</span>
+                  <span className={`block truncate text-xs ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{item.tabId ? `${item.parentLabel} · ${item.category}` : item.category}</span>
+                </span>
+                {isSelected && !isMobile && <span className={`text-[10px] ${isDark ? 'text-white/35' : 'text-slate-400'}`}>↵</span>}
+              </button>
+            );
+          }) : (
+            <div className="px-4 py-10 text-center">
+              <Search className={`mx-auto mb-3 h-7 w-7 ${isDark ? 'text-white/20' : 'text-slate-300'}`} />
+              <p className="text-sm font-semibold">{labels.noToolsFound}</p>
+              <p className={`mt-1 text-xs ${isDark ? 'text-white/40' : 'text-slate-400'}`}>{labels.tryAnotherSearch}</p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 const ALL_BODY_THEME_CLASSES = Object.values(APP_THEMES).map(t => t.bodyClass).filter(Boolean);
 
 export default function Home() {
@@ -619,6 +771,7 @@ export default function Home() {
   });
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showSettings, setShowSettings] = useState(false);
+  const [showToolFinder, setShowToolFinder] = useState(false);
   const [showAuthWelcome, setShowAuthWelcome] = useState(() => {
     try {
       return sessionStorage.getItem(AUTH_WELCOME_COMPLETED_KEY) !== 'true';
@@ -679,6 +832,17 @@ export default function Home() {
     };
     window.addEventListener('keydown', openSettingsShortcut);
     return () => window.removeEventListener('keydown', openSettingsShortcut);
+  }, []);
+
+  useEffect(() => {
+    const openToolFinderShortcut = event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setShowToolFinder(true);
+      }
+    };
+    window.addEventListener('keydown', openToolFinderShortcut);
+    return () => window.removeEventListener('keydown', openToolFinderShortcut);
   }, []);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -1033,6 +1197,14 @@ export default function Home() {
     history: lang === 'nl' ? 'Geschiedenis' : 'History',
     clearAll: lang === 'nl' ? 'Alles wissen' : 'Clear All',
     empty: lang === 'nl' ? 'Leeg' : 'Empty',
+    toolFinder: lang === 'nl' ? 'Vind een tool' : 'Find a tool',
+    toolFinderTooltip: lang === 'nl' ? 'Vind een tool — Doorzoek alle calculators en tools (⌘K / Ctrl+K)' : 'Find a tool — Search all calculators and tools (⌘K / Ctrl+K)',
+    searchTools: lang === 'nl' ? 'Zoek calculators en tools…' : 'Search calculators and tools…',
+    searchResults: lang === 'nl' ? 'Zoekresultaten' : 'Search results',
+    quickAccess: lang === 'nl' ? 'Snelle toegang' : 'Quick access',
+    noToolsFound: lang === 'nl' ? 'Geen tools gevonden' : 'No tools found',
+    tryAnotherSearch: lang === 'nl' ? 'Probeer een andere zoekterm.' : 'Try another search term.',
+    clearSearch: lang === 'nl' ? 'Zoekopdracht wissen' : 'Clear search',
   };
 
   const theme = APP_THEMES[settings.appTheme] || APP_THEMES.default;
@@ -1311,32 +1483,32 @@ export default function Home() {
             <div className="flex items-center gap-1 sm:gap-0.5">
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
-                className={`w-12 h-12 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10 text-white/70' : 'hover:bg-slate-100 text-slate-600'
+                className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10 text-white/70' : 'hover:bg-slate-100 text-slate-600'
                   }`}
                 style={{ WebkitAppRegion: 'no-drag' }}
                 title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
               >
-                <PanelLeft className={`w-5.5 h-5.5 transition-transform duration-300 ${sidebarOpen ? 'rotate-180 scale-110' : ''}`} />
+                <PanelLeft className={`w-5 h-5 transition-transform duration-300 ${sidebarOpen ? 'rotate-180 scale-110' : ''}`} />
               </button>
 
               <button
                 onClick={goHome}
-                className={`w-12 h-12 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
+                className={`w-10 h-10 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
                   }`}
                 style={{ WebkitAppRegion: 'no-drag' }}
                 title="Home"
               >
-                <img src={logo} alt="BiBaBenchBuddy Logo" className="w-11 h-11 object-contain" />
+                <img src={logo} alt="BiBaBenchBuddy Logo" className="w-9 h-9 object-contain" />
               </button>
 
               {!isHome && (
                 <button
                   onClick={goHome}
-                  className={`min-h-[44px] px-3 flex items-center gap-1.5 text-sm rounded-xl touch-manipulation transition-colors ml-1 ${backBtnColor} ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
+                  className={`h-9 px-2.5 flex items-center gap-1.5 text-xs sm:text-sm rounded-xl touch-manipulation transition-colors ml-1 ${backBtnColor} ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
                     }`}
                   style={{ WebkitAppRegion: 'no-drag' }}
                 >
-                  <ArrowLeft className="w-5 h-5" /> {labels.back}
+                  <ArrowLeft className="w-4 h-4" /> {labels.back}
                 </button>
               )}
             </div>
@@ -1360,25 +1532,33 @@ export default function Home() {
               )}
 
               <button
-                onClick={() => setActive('ai')}
-                className={`group min-h-[38px] px-3 flex items-center gap-2 rounded-xl text-xs font-semibold border touch-manipulation transition-all duration-200 shadow-xs ${
-                  active === 'ai'
-                    ? (isDark
-                        ? 'bg-white/20 text-white border-white/30 shadow-sm'
-                        : 'bg-slate-100 text-slate-900 border-slate-300 shadow-sm')
-                    : (isDark
-                        ? 'bg-slate-800/80 text-white/80 border-white/10 hover:bg-slate-800 hover:text-white hover:border-white/20'
-                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300')
-                }`}
+                type="button"
+                onClick={() => setShowToolFinder(true)}
+                className="group relative flex items-center justify-center transition-all duration-300 active:scale-95"
                 style={{ WebkitAppRegion: 'no-drag' }}
+                aria-label={labels.toolFinder}
+                title={labels.toolFinderTooltip}
+              >
+                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-colors ${settingsBtnColor}`}>
+                  <Search className="w-5 h-5" />
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActive('ai')}
+                className="group relative flex items-center justify-center transition-all duration-300 active:scale-95"
+                style={{ WebkitAppRegion: 'no-drag' }}
+                aria-label={labels.aiAssistant}
                 title={labels.aiAssistant}
               >
-                <div className={`w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-transform group-hover:scale-105 ${
-                  iconStyle ? '' : 'bg-gradient-to-br from-indigo-500 to-violet-600 shadow-2xs'
-                }`} style={iconStyle || {}}>
-                  <RiRobot2Line className="w-3 h-3 text-white" />
+                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-all ${
+                  active === 'ai'
+                    ? (isDark ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-400/30' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200')
+                    : settingsBtnColor
+                }`}>
+                  <RiRobot2Line className="w-5 h-5" />
                 </div>
-                <span className="hidden sm:inline font-semibold">{labels.aiAssistant}</span>
               </button>
 
               <button
@@ -1387,7 +1567,7 @@ export default function Home() {
                 style={{ WebkitAppRegion: 'no-drag' }}
                 title={user ? (profile?.display_name || user.email) : "Settings"}
               >
-                <div className={`w-11 h-11 flex items-center justify-center rounded-xl touch-manipulation transition-colors ${settingsBtnColor}`}>
+                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-colors ${settingsBtnColor}`}>
                   <Settings className="w-5 h-5" />
                 </div>
               </button>
@@ -1577,6 +1757,20 @@ export default function Home() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      <ToolFinder
+        open={showToolFinder}
+        onClose={() => setShowToolFinder(false)}
+        onSelect={item => {
+          setActive(item.toolId);
+          setHistoryData(null);
+          if (item.tabId) handleSelectTab(item.toolId, item.tabId);
+          setSidebarOpen(false);
+        }}
+        isDark={isDark}
+        isMobile={isMobile}
+        labels={labels}
+      />
 
       {!isLoadingAuth && !user && !isPasswordRecovery && (
         <AuthWelcomeModal
