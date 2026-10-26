@@ -37,6 +37,15 @@ const THEME_GROUPS = [
   { key: 'muted', label: 'Muted Tones' },
 ];
 const VISIBLE_THEME_KEYS = new Set(['default', 'monochrome', 'minimal', 'macosGlass']);
+const ACCENT_PRESETS = [
+  { id: 'graphite', label: 'Graphite', color: '#111111' },
+  { id: 'blue', label: 'Blue', color: '#2563eb' },
+  { id: 'teal', label: 'Teal', color: '#0f9f8f' },
+  { id: 'yellow', label: 'Yellow', color: '#eab308' },
+  { id: 'pink', label: 'Pink', color: '#db2777' },
+  { id: 'orange', label: 'Orange', color: '#f97316' },
+  { id: 'purple', label: 'Purple', color: '#8b5cf6' },
+];
 
 const Grok = ({ className = '', size = 14 }) => (
   <span className={`inline-flex items-center justify-center rounded-full border border-current text-[9px] font-black leading-none ${className}`} style={{ width: size, height: size }}>G</span>
@@ -55,6 +64,8 @@ const TRANSLATIONS = {
     appTheme: 'App Theme',
     curated: 'Curated',
     mutedTones: 'Muted Tones',
+    accentColor: 'Accent Color',
+    customColor: 'Custom',
     fontSize: 'Font Size',
     language: 'Language',
     aiProvider: 'AI Provider',
@@ -131,6 +142,8 @@ const TRANSLATIONS = {
     appTheme: 'App Thema',
     curated: 'Geselecteerd',
     mutedTones: 'Zachte Tinten',
+    accentColor: 'Accentkleur',
+    customColor: 'Aangepast',
     fontSize: 'Lettergrootte',
     language: 'Taal',
     aiProvider: 'AI Provider',
@@ -249,6 +262,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
   const [orFreeOnly, setOrFreeOnly] = React.useState(false);
 
   const currentTheme = settings.appTheme || 'default';
+  const currentAccent = settings.accentColor || '#db2777';
   const [tab, setTab] = useState('appearance');
 
   const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot' | 'resetPassword'
@@ -573,7 +587,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
     <div className="fixed inset-0 z-[200] flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
       <div
-        className="relative w-80 bg-white dark:bg-slate-900 shadow-2xl h-full overflow-y-auto flex flex-col"
+        className="relative flex h-full w-80 flex-col overflow-y-auto border-l border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
@@ -594,7 +608,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium border-b-2 transition-colors ${tab === t.id
-                  ? 'border-teal-500 text-teal-700 dark:text-teal-500'
+                  ? 'accent-border accent-text'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                   }`}
               >
@@ -629,7 +643,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                                 onClick={() => onChange({ ...settings, appTheme: key })}
                                 title={theme.label}
                                 className={`aspect-square w-full rounded-md border-2 transition-all p-0.5 relative group ${currentTheme === key
-                                  ? 'border-teal-500 scale-110 shadow-sm'
+                                  ? 'accent-border scale-110 shadow-sm'
                                   : 'border-white shadow-sm hover:border-slate-200 dark:border-slate-700'
                                   }`}
                               >
@@ -649,7 +663,7 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                                 key={key}
                                 onClick={() => onChange({ ...settings, appTheme: key })}
                                 className={`flex items-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-medium transition-all text-left ${currentTheme === key
-                                  ? 'border-teal-500 bg-teal-50 text-teal-700'
+                                  ? 'accent-border accent-soft'
                                   : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300'
                                   }`}
                               >
@@ -666,6 +680,44 @@ export default function SettingsPanel({ settings, onChange, onClose }) {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <Palette className="h-3.5 w-3.5" /> {t.accentColor}
+                </p>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                  <div className="grid grid-cols-7 gap-2">
+                    {ACCENT_PRESETS.map(preset => {
+                      const isSelected = currentAccent.toLowerCase() === preset.color.toLowerCase();
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => onChange({ ...settings, accentColor: preset.color })}
+                          title={preset.label}
+                          aria-label={`${t.accentColor}: ${preset.label}`}
+                          aria-pressed={isSelected}
+                          className="flex aspect-square items-center justify-center rounded-full border-2 bg-white p-1 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] dark:bg-slate-900"
+                          style={{ borderColor: isSelected ? preset.color : 'transparent' }}
+                        >
+                          <span className="h-full w-full rounded-full" style={{ backgroundColor: preset.color }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:hover:bg-slate-800">
+                    <input
+                      type="color"
+                      value={currentAccent}
+                      onChange={event => onChange({ ...settings, accentColor: event.target.value })}
+                      className="h-7 w-7 shrink-0 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                      aria-label={t.customColor}
+                    />
+                    <span className="min-w-0 flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{t.customColor}</span>
+                    <code className="text-[11px] uppercase text-slate-400">{currentAccent}</code>
+                  </label>
                 </div>
               </div>
 

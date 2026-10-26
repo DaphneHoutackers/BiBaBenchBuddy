@@ -12,7 +12,7 @@ import { isSyncEnabled, signInWithGithub, supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import appLogo from '@/assets/icon-512.png';
 
-export function AuthWelcomeModal({ open, onClose }) {
+export function AuthWelcomeModal({ open, onClose, initialMode = 'login' }) {
   const { authError: desktopAuthError } = useAuth();
   const [mode, setMode] = useState('login');
   const [displayName, setDisplayName] = useState('');
@@ -24,6 +24,13 @@ export function AuthWelcomeModal({ open, onClose }) {
   const [message, setMessage] = useState('');
 
   const authAvailable = isSyncEnabled();
+
+  useEffect(() => {
+    if (!open) return;
+    setMode(initialMode);
+    setError('');
+    setMessage('');
+  }, [initialMode, open]);
 
   useEffect(() => {
     if (!desktopAuthError) return;
@@ -93,26 +100,34 @@ export function AuthWelcomeModal({ open, onClose }) {
   return (
     <Dialog open={open} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}>
       <DialogContent
-        className="w-[calc(100%_-_2rem)] max-w-md gap-0 overflow-hidden rounded-2xl border-slate-200 bg-white p-0 shadow-2xl [&>button]:text-white [&>button]:opacity-90 [&>button]:hover:opacity-100 dark:border-slate-700 dark:bg-slate-900"
-        onInteractOutside={event => event.preventDefault()}
+        className="w-[calc(100%_-_2rem)] max-w-md gap-0 overflow-hidden rounded-2xl border-slate-200 bg-white p-0 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
       >
-        <div className="bg-gradient-to-br from-rose-400 via-pink-500 to-fuchsia-500 px-8 py-6 text-center text-white">
+        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6 text-center dark:border-slate-800 dark:bg-slate-950/50">
           <img
             src={appLogo}
             alt="BiBaBenchBuddy"
-            className="mx-auto mb-3 h-20 w-20 rounded-[1.35rem] shadow-lg shadow-fuchsia-900/20"
+            className="mx-auto mb-2 h-14 w-14 rounded-xl shadow-sm"
           />
           <DialogHeader className="space-y-1.5 text-center sm:text-center">
-            <DialogTitle className="text-xl font-bold tracking-tight text-white">
+            <DialogTitle className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
               Save your work across devices
             </DialogTitle>
-            <DialogDescription className="text-xs leading-relaxed text-white/90">
-              Sign in or create an account to keep your calculations, sequences, and settings safely synced.
+            <DialogDescription className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+              Your current workspace stays open. Sign in only if you want account tools and cross-device sync.
             </DialogDescription>
           </DialogHeader>
         </div>
 
-        <div className="p-6 sm:p-7">
+        <div className="p-5 sm:p-6">
+          <button
+            type="button"
+            onClick={onClose}
+            className="mb-4 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:hover:bg-slate-700"
+          >
+            Continue without an account
+          </button>
+
+          <p className="mb-3 text-center text-[11px] font-medium uppercase tracking-wider text-slate-400">Or use an account</p>
           <div className="mb-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
             {['login', 'signup'].map(option => (
               <button
@@ -143,7 +158,7 @@ export function AuthWelcomeModal({ open, onClose }) {
                   autoComplete="name"
                   required
                   disabled={!authAvailable || isSubmitting}
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                  className="accent-field h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:ring-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                 />
               </label>
             )}
@@ -159,7 +174,7 @@ export function AuthWelcomeModal({ open, onClose }) {
                 autoComplete="email"
                 required
                 disabled={!authAvailable || isSubmitting}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="accent-field h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm outline-none transition focus:ring-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
             </label>
 
@@ -175,7 +190,7 @@ export function AuthWelcomeModal({ open, onClose }) {
                 minLength={6}
                 required
                 disabled={!authAvailable || isSubmitting}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-11 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-500/20 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className="accent-field h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-11 text-sm outline-none transition focus:ring-2 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
               <button
                 type="button"
@@ -199,7 +214,7 @@ export function AuthWelcomeModal({ open, onClose }) {
             <Button
               type="submit"
               disabled={!authAvailable || isSubmitting}
-              className="h-11 w-full rounded-xl bg-teal-600 font-semibold text-white hover:bg-teal-700"
+              className="accent-button h-11 w-full rounded-xl font-semibold"
             >
               {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
               {mode === 'login' ? 'Log in' : 'Create account'}
@@ -223,13 +238,6 @@ export function AuthWelcomeModal({ open, onClose }) {
             Continue with GitHub
           </Button>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="mt-3 w-full rounded-lg px-3 py-2 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-          >
-            Use app without an account
-          </button>
         </div>
       </DialogContent>
     </Dialog>

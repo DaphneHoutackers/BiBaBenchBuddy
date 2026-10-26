@@ -447,7 +447,7 @@ export default function PCRCalculator({ externalTab, onTabChange, historyData, i
       </div>
 
       <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
-        <TabsList className="bg-slate-200/90 dark:bg-slate-950/80 border border-slate-300/40 dark:border-slate-800/60 shadow-sm p-1">
+        <TabsList aria-label="PCR modes">
           <TabsTrigger value="mix" className="flex items-center gap-2">
             <FlaskConical className="w-4 h-4" />
             PCR Mix

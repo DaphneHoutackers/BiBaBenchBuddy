@@ -616,7 +616,7 @@ export default function ProtocolLibrary({ historyData, isActive, settings, user,
       </div>
 
       <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); onTabChange?.(v); setShowBuilder(false); }}>
-        <TabsList className="bg-slate-200/90 dark:bg-slate-950/80 border border-slate-300/40 dark:border-slate-800/60 shadow-sm p-1">
+        <TabsList aria-label="Protocol library modes">
           <TabsTrigger value="library" className="flex items-center gap-2">
             <BookOpen className="w-4 h-4" />
             Library

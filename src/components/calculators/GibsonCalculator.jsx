@@ -1615,7 +1615,7 @@ export default function GibsonCalculator({ historyData, externalTab, onTabChange
         </div>
 
         <Tabs value={tab} onValueChange={v => { setTab(v); onTabChange?.(v); }}>
-          <TabsList className="bg-slate-200/90 dark:bg-slate-950/80 border border-slate-300/40 dark:border-slate-800/60 shadow-sm p-1">
+          <TabsList aria-label="Gibson assembly modes">
             <TabsTrigger value="single" className="flex items-center gap-2">
               <PiCircleDashedBold className="w-4 h-4" />
               Single Gibson

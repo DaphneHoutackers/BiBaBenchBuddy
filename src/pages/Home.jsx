@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense, lazy, Component } from 'react';
 import {
-  ArrowLeft, BookOpen,
-  Settings, PanelLeft, ChevronDown, Clock, Trash2,
+  BookOpen, House, Settings, PanelLeft, ChevronDown, Clock, Trash2,
   Edit3, Palette, NotebookPen, CalendarDays, Grid3X3,
   Maximize2, Search, X
 } from 'lucide-react';
@@ -21,9 +20,9 @@ import { APP_THEMES } from '@/styles/themes';
 import { supabase, isSyncEnabled } from '@/lib/supabase';
 import { useAuth } from '@/lib/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
-import logo from '@/assets/icon-512.png';
 import { AccountRequired } from '@/components/tools/toolUtils';
 import { rankToolSearchResults } from '@/lib/toolSearch';
+import WorkspaceTabs from '@/components/shell/WorkspaceTabs';
 
 // Eagerly loaded calculators
 import DigestCalculator from '@/components/calculators/DigestCalculator';
@@ -44,7 +43,9 @@ const GelSimulator = lazy(() => import('@/components/calculators/GelSimulator'))
 const PlasmidAnalyzer = lazy(() => import('@/components/calculators/PlasmidAnalyzer'));
 
 const SETTINGS_KEY = 'biba_bench_buddy_settings';
-const AUTH_WELCOME_COMPLETED_KEY = 'biba_auth_welcome_completed';
+const RECENTS_KEY = 'bibabenchbuddy_recent_activity_contexts_v2';
+const SIDEBAR_WIDTH_KEY = 'bibabenchbuddy_sidebar_width';
+const DEFAULT_ACCENT_COLOR = '#db2777';
 const HIDDEN_HISTORY_TOOL_IDS = new Set(['__seq_analyzer_library__']);
 const isHiddenHistoryTool = toolId => HIDDEN_HISTORY_TOOL_IDS.has(toolId) || String(toolId || '').startsWith('__account_state__:');
 
@@ -128,7 +129,38 @@ const DEFAULT_SETTINGS = {
   appTheme: 'default',
   fontSize: '16px',
   language: 'en',
+  accentColor: DEFAULT_ACCENT_COLOR,
 };
+
+function getAccentTokens(value) {
+  const match = /^#([0-9a-f]{6})$/i.exec(value || '');
+  const hex = match ? match[1] : DEFAULT_ACCENT_COLOR.slice(1);
+  const red = parseInt(hex.slice(0, 2), 16) / 255;
+  const green = parseInt(hex.slice(2, 4), 16) / 255;
+  const blue = parseInt(hex.slice(4, 6), 16) / 255;
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  const delta = maximum - minimum;
+  let hue = 0;
+
+  if (delta) {
+    if (maximum === red) hue = ((green - blue) / delta) % 6;
+    else if (maximum === green) hue = (blue - red) / delta + 2;
+    else hue = (red - green) / delta + 4;
+    hue = Math.round(hue * 60);
+    if (hue < 0) hue += 360;
+  }
+
+  const lightness = (maximum + minimum) / 2;
+  const saturation = delta ? delta / (1 - Math.abs(2 * lightness - 1)) : 0;
+  const luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+
+  return {
+    color: `#${hex}`,
+    hsl: `${hue} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%`,
+    foreground: luminance > 0.62 ? '0 0% 9%' : '0 0% 100%',
+  };
+}
 
 const CALCULATORS = [
   { id: 'digest', name: 'Digestion', icon: BiGame, gradient: 'from-rose-500 to-purple-400' },
@@ -181,29 +213,43 @@ const TOOL_TABS = {
 const TOOL_GROUPS = [
   {
     id: 'lab',
-    label: 'Lab & Visualization',
+    label: 'Lab Tools',
     tools: [
       { id: 'gel', name: 'Gel Simulator', icon: FaSortAmountDown, gradient: 'from-blue-600 to-cyan-500' },
       { id: 'plasmid', name: 'Sequence Analyzer', icon: BiDna, gradient: 'from-teal-500 to-sky-500' },
       { id: 'plates', name: 'Plate Labeler', icon: Grid3X3, gradient: 'from-emerald-500 to-sky-500' },
+      { id: 'buffer', name: 'Buffers', icon: GoBeaker, direction: 'bg-gradient-to-tl', gradient: 'from-blue-600 via-violet-500 to-pink-400' },
     ],
   },
   {
     id: 'general',
-    label: 'General',
+    label: 'Planning & Documentation',
     tools: [
       { id: 'notes', name: 'Notes', icon: NotebookPen, direction: 'bg-gradient-to-br', gradient: 'from-pink-500 to-blue-500' },
       { id: 'agenda', name: 'Agenda', icon: CalendarDays, direction: 'bg-gradient-to-tr', gradient: 'from-blue-500 to-pink-500' },
       { id: 'protocols', name: 'Protocols', icon: BookOpen, direction: 'bg-gradient-to-bl', gradient: 'from-fuchsia-500 via-purple-500 to-blue-500' },
-      { id: 'buffer', name: 'Buffers', icon: GoBeaker, direction: 'bg-gradient-to-tl', gradient: 'from-blue-600 via-violet-500 to-pink-400' },
     ],
   },
 ];
 
-const HOME_LAB_TOOLS = TOOL_GROUPS[0].tools;
-const HOME_GENERAL_TOOLS = TOOL_GROUPS[1].tools;
 const SEARCHABLE_TOOLS = [...CALCULATORS, ...TOOL_GROUPS.flatMap(group => group.tools)];
 const TOOL_BY_ID = new Map(SEARCHABLE_TOOLS.map(tool => [tool.id, tool]));
+
+const TOOL_DESCRIPTIONS = {
+  digest: 'Plan restriction digests and enzyme mixes',
+  ligation: 'Calculate vector and insert ligation ratios',
+  gibson: 'Assemble overlapping DNA fragments',
+  pcr: 'Build PCR mixes, programs and products',
+  dilution: 'Calculate single and serial dilutions',
+  protein: 'BCA standards and SDS-PAGE preparation',
+  gel: 'Preview DNA gels and western blots',
+  plasmid: 'Inspect, annotate and align sequences',
+  plates: 'Create clear sample and plate layouts',
+  notes: 'Keep bench notes beside your calculations',
+  agenda: 'Plan experiments and lab work',
+  protocols: 'Build and organize reusable protocols',
+  buffer: 'Prepare buffers and growth media',
+};
 
 const TOOL_SEARCH_ITEMS = [
   ...CALCULATORS.map(tool => ({ ...tool, toolId: tool.id, label: tool.name, category: 'Calculators' })),
@@ -262,7 +308,7 @@ const TAB_COLORS = [
 ];
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
-function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, iconTextColor, onRestoreHistory, isMacElectron, isMobile, labels, lang }) {
+function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, iconTextColor, onRestoreHistory, onOpenAI, isMobile, collapsed, labels, lang, width, onResizeStart }) {
   const [expandedCalc, setExpandedCalc] = useState(null);
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const [showFullHistoryModal, setShowFullHistoryModal] = useState(false);
@@ -285,9 +331,9 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
     if (active && TOOL_TABS[active]) setExpandedCalc(active);
   }, [active]);
 
-  const btnBase = (isActive) => `w-full flex items-center gap-2 px-2.5 py-1.5 min-h-[32px] rounded-lg text-sm font-medium mb-0.5 transition-all ${isActive
-    ? (isDark ? 'bg-white/15 text-white font-semibold shadow-sm' : 'bg-slate-100/90 text-slate-900 font-semibold border border-slate-200/80 shadow-xs')
-    : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')
+  const btnBase = (isActive) => `w-full flex items-center gap-2 px-2.5 py-1.5 min-h-[32px] rounded-lg text-sm font-medium mb-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${isActive
+    ? (isDark ? 'bg-white/15 text-white font-semibold' : 'bg-[#e7e7e7] text-[#0d0d0d] font-semibold')
+    : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-[#5d5d5d] hover:bg-[#ececec] hover:text-[#0d0d0d]')
     }`;
 
   const renderToolIcon = (tool) => (
@@ -299,35 +345,80 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
     </div>
   );
 
-  return (
-    <aside
-      className={`fixed left-0 top-0 h-full border-r overflow-y-auto z-50 shadow-2xl transition-transform ${isMobile ? 'w-64' : 'w-52'
-        } ${isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-slate-200'}`}
-      style={{ minWidth: 190 }}
-    >
-      {/* Sidebar Header Spacer (to avoid header overlap) */}
-      <div className={`${isMacElectron ? 'h-11' : 'h-11'} border-b flex-shrink-0 ${isDark ? 'border-white/10' : 'border-slate-200'}`} />
-
-      {/* Home Button */}
-      <div className="px-1.5 pt-2 pb-1 border-b mb-1">
+  if (collapsed && !isMobile) {
+    return (
+      <aside
+        aria-label={labels.navigation}
+        className={`relative z-30 flex h-full w-14 shrink-0 flex-col items-center border-r pt-2 ${
+          isDark ? 'border-white/10 bg-slate-900' : 'border-[#e5e5e5] bg-[#f7f7f8]'
+        }`}
+      >
         <button
+          type="button"
           onClick={() => onSelect(null)}
-          className={`w-full flex items-center gap-2 px-1.5 py-1 min-h-[34px] rounded-lg text-sm font-medium transition-all ${
+          title={labels.homepage}
+          aria-label={labels.homepage}
+          className={`mb-1 flex h-10 w-10 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
             active === null
-              ? (isDark ? 'bg-white/15 text-white font-semibold shadow-sm' : 'bg-slate-100/90 text-slate-900 font-semibold border border-slate-200/80 shadow-xs')
-              : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900')
+              ? isDark ? 'bg-white/15 text-white' : 'bg-[#e7e7e7] text-[#0d0d0d]'
+              : isDark ? 'text-white/60 hover:bg-white/10' : 'text-[#6f6f6f] hover:bg-[#ececec] hover:text-[#0d0d0d]'
           }`}
         >
-          <div className="w-7 h-7 flex items-center justify-center flex-shrink-0">
-            <img src={logo} alt="BiBaBenchBuddy Logo" className="w-7 h-7 object-contain" />
-          </div>
-          <span className="text-xs font-bold uppercase tracking-wider">{labels.homepage}</span>
+          <House className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={onOpenAI}
+          title={labels.aiAssistant}
+          aria-label={labels.aiAssistant}
+          className={`my-0.5 flex h-10 w-10 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+            active === 'ai'
+              ? isDark ? 'bg-white/15 text-white' : 'bg-[#e7e7e7] text-[#0d0d0d]'
+              : isDark ? 'text-white/60 hover:bg-white/10' : 'text-[#6f6f6f] hover:bg-[#ececec] hover:text-[#0d0d0d]'
+          }`}
+        >
+          <RiRobot2Line className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
+      </aside>
+    );
+  }
+
+  return (
+    <aside
+      aria-label={labels.navigation}
+      className={`${isMobile ? 'absolute left-0 top-0 z-50 h-full w-64 shadow-2xl' : 'relative z-30 h-full shrink-0'} overflow-y-auto border-r ${isDark ? 'bg-slate-900 border-white/10' : 'bg-[#f7f7f8] border-[#e5e5e5]'}`}
+      style={isMobile ? undefined : { width }}
+    >
+      <div className="shrink-0 px-2 py-2">
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          className={`w-full flex items-center gap-2 px-2 py-1.5 min-h-[34px] rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+            active === null
+              ? (isDark ? 'bg-white/15 text-white font-semibold' : 'bg-[#e7e7e7] text-[#0d0d0d] font-semibold')
+              : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-[#5d5d5d] hover:bg-[#ececec] hover:text-[#0d0d0d]')
+          }`}
+        >
+          <House className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="text-xs">{labels.homepage}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onOpenAI}
+          className={`mt-0.5 w-full flex items-center gap-2 px-2 py-1.5 min-h-[34px] rounded-lg text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+            active === 'ai'
+              ? (isDark ? 'bg-white/15 text-white font-semibold' : 'bg-[#e7e7e7] text-[#0d0d0d] font-semibold')
+              : (isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-[#5d5d5d] hover:bg-[#ececec] hover:text-[#0d0d0d]')
+          }`}
+        >
+          <RiRobot2Line className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="text-xs">{labels.aiAssistant}</span>
         </button>
       </div>
 
-      {/* Calculators */}
+      {/* Calculations */}
       <div className="px-2 pt-1 pb-0.5">
-        <p className={`text-xs font-bold uppercase tracking-wider px-1 mb-1.5 ${isDark ? 'text-white/30' : 'text-slate-400'}`}>{labels.calculators}</p>
+        <p className={`px-1 mb-1.5 text-[11px] font-semibold tracking-wide ${isDark ? 'text-white/45' : 'text-[#737373]'}`}>{labels.calculators}</p>
         {CALCULATORS.map(c => {
           const isActive = active === c.id;
           const hasTabs = !!TOOL_TABS[c.id];
@@ -366,7 +457,7 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
       {/* Tool groups */}
       {TOOL_GROUPS.map(group => (
         <div key={group.id} className="px-2 pt-0.5 pb-0.5">
-          <p className={`text-xs font-bold uppercase tracking-wider px-1 mb-1 ${isDark ? 'text-white/30' : 'text-slate-400'}`}>{group.label}</p>
+          <p className={`px-1 mb-1 text-[11px] font-semibold tracking-wide ${isDark ? 'text-white/45' : 'text-[#737373]'}`}>{group.label}</p>
           {group.tools.map(t => {
             const isActive = active === t.id;
             const hasTabs = !!TOOL_TABS[t.id];
@@ -410,7 +501,7 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
             onClick={() => setHistoryExpanded(!historyExpanded)}
             className="flex items-center gap-1.5 group flex-1 text-left"
           >
-            <p className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDark ? 'text-white/40 group-hover:text-white/70' : 'text-slate-400 group-hover:text-slate-600'}`}>
+            <p className={`text-[11px] font-semibold tracking-wide flex items-center gap-1.5 ${isDark ? 'text-white/45 group-hover:text-white/70' : 'text-[#737373] group-hover:text-[#444]'}`}>
               <Clock className="w-3.5 h-3.5" /> {labels.history}
             </p>
             <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${historyExpanded ? 'rotate-180' : ''} ${isDark ? 'text-white/30' : 'text-slate-300'}`} />
@@ -473,6 +564,16 @@ function Sidebar({ active, onSelect, onSelectTab, activeTab, isDark, iconStyle, 
           </div>
         )}
       </div>
+
+      {!isMobile && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={lang === 'nl' ? 'Breedte van zijbalk aanpassen' : 'Resize sidebar'}
+          onPointerDown={onResizeStart}
+          className="sidebar-resize-handle absolute inset-y-0 right-[-3px] z-40 w-1.5 cursor-col-resize touch-none bg-transparent transition-colors"
+        />
+      )}
 
       {/* Full History Modal */}
       {showFullHistoryModal && (
@@ -750,7 +851,7 @@ function ToolFinder({ open, onClose, onSelect, isDark, isMobile, labels }) {
 const ALL_BODY_THEME_CLASSES = Object.values(APP_THEMES).map(t => t.bodyClass).filter(Boolean);
 
 export default function Home() {
-  const { user, profile, isLoadingAuth, isPasswordRecovery } = useAuth();
+  const { user, isLoadingAuth, isPasswordRecovery } = useAuth();
   const isMobile = useIsMobile();
   const [active, setActive] = useState(() => {
     try {
@@ -772,11 +873,36 @@ export default function Home() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [showSettings, setShowSettings] = useState(false);
   const [showToolFinder, setShowToolFinder] = useState(false);
-  const [showAuthWelcome, setShowAuthWelcome] = useState(() => {
+  const [showAuthWelcome, setShowAuthWelcome] = useState(false);
+  const [authWelcomeMode, setAuthWelcomeMode] = useState('login');
+  const [homeSearch, setHomeSearch] = useState('');
+  const [recentContexts, setRecentContexts] = useState(() => {
     try {
-      return sessionStorage.getItem(AUTH_WELCOME_COMPLETED_KEY) !== 'true';
+      const saved = JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]');
+      return Array.isArray(saved) ? saved.slice(0, 5) : [];
     } catch {
-      return true;
+      return [];
+    }
+  });
+  const [workspaceTabs, setWorkspaceTabs] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bibabenchbuddy_active_tool');
+      if (saved && ALL_IDS.includes(saved)) {
+        const tool = TOOL_BY_ID.get(saved);
+        return [
+          { id: 'home', toolId: null, title: 'Home' },
+          { id: `workspace-${saved}-restored`, toolId: saved, title: `${tool?.name || 'Workspace'} 1`, icon: tool?.icon },
+        ];
+      }
+    } catch {}
+    return [{ id: 'home', toolId: null, title: 'Home' }];
+  });
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => {
+    try {
+      const saved = localStorage.getItem('bibabenchbuddy_active_tool');
+      return saved && ALL_IDS.includes(saved) ? `workspace-${saved}-restored` : 'home';
+    } catch {
+      return 'home';
     }
   });
 
@@ -791,22 +917,10 @@ export default function Home() {
   }, [active]);
 
   useEffect(() => {
-    if (!user) return;
-
-    try {
-      sessionStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
-    } catch {
-      // Keep the in-memory state working when persistent storage is unavailable.
-    }
-    setShowAuthWelcome(false);
+    if (user) setShowAuthWelcome(false);
   }, [user]);
 
   const dismissAuthWelcome = () => {
-    try {
-      sessionStorage.setItem(AUTH_WELCOME_COMPLETED_KEY, 'true');
-    } catch {
-      // The modal still stays dismissed for the current app session.
-    }
     setShowAuthWelcome(false);
   };
 
@@ -818,7 +932,10 @@ export default function Home() {
   }, [isPasswordRecovery]);
 
   useEffect(() => {
-    const openAuth = () => setShowAuthWelcome(true);
+    const openAuth = event => {
+      setAuthWelcomeMode(event.detail?.mode === 'signup' ? 'signup' : 'login');
+      setShowAuthWelcome(true);
+    };
     window.addEventListener('bibabench:open-auth', openAuth);
     return () => window.removeEventListener('bibabench:open-auth', openAuth);
   }, []);
@@ -845,7 +962,56 @@ export default function Home() {
     return () => window.removeEventListener('keydown', openToolFinderShortcut);
   }, []);
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return window.innerWidth >= 768 && localStorage.getItem('bibabenchbuddy_sidebar_expanded') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    try {
+      const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+      return Number.isFinite(storedWidth) && storedWidth >= 190 && storedWidth <= 360 ? storedWidth : 224;
+    } catch {
+      return 224;
+    }
+  });
+
+  const handleSidebarResizeStart = useCallback(event => {
+    if (isMobile) return;
+    event.preventDefault();
+    const startingX = event.clientX;
+    const startingWidth = sidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = moveEvent => {
+      setSidebarWidth(Math.min(360, Math.max(190, startingWidth + moveEvent.clientX - startingX)));
+    };
+    const handlePointerUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  }, [isMobile, sidebarWidth]);
+
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); } catch {}
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    if (isMobile) return;
+    try { localStorage.setItem('bibabenchbuddy_sidebar_expanded', String(sidebarOpen)); } catch {}
+  }, [isMobile, sidebarOpen]);
+
+  useEffect(() => {
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
   const [activeTab, setActiveTab] = useState(() => {
     try {
       const saved = localStorage.getItem('bibabenchbuddy_active_tab');
@@ -900,6 +1066,52 @@ export default function Home() {
     });
     return initial;
   });
+
+  const recordRecentActivity = useCallback(() => {
+    if (!active) return;
+    const subtabId = TOOL_TABS[active]
+      ? (activeTab[active] || TOOL_TABS[active][0].id)
+      : null;
+    const toolKey = subtabId ? `${active}-${subtabId}` : active;
+    const instanceId = activeInstance[toolKey] || null;
+    const instanceName = (toolInstances[toolKey] || []).find(instance => instance.id === instanceId)?.name || null;
+    const recentKey = `${active}:${subtabId || 'root'}:${instanceId || 'single'}`;
+    const nextItem = {
+      key: recentKey,
+      toolId: active,
+      subtabId,
+      instanceId,
+      instanceName,
+      lastUsed: Date.now(),
+    };
+
+    setRecentContexts(previous => {
+      const existing = previous[0];
+      if (existing?.key === recentKey && existing.instanceName === instanceName) return previous;
+      const next = [nextItem, ...previous.filter(item => item.key !== recentKey)].slice(0, 5);
+      try { localStorage.setItem(RECENTS_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [active, activeInstance, activeTab, toolInstances]);
+
+  const handleToolActivityCapture = useCallback(event => {
+    if (!active) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest('[data-recent-ignore="true"]')) return;
+
+    if (event.type === 'click') {
+      const button = target.closest('button, [role="button"], [role="switch"]');
+      if (!button || button.getAttribute('role') === 'tab' || button.disabled) return;
+      const label = [button.getAttribute('aria-label'), button.getAttribute('title'), button.textContent]
+        .filter(Boolean)
+        .join(' ')
+        .trim()
+        .toLowerCase();
+      if (/\b(help|info|close|open|expand|collapse|previous|next|copy|download|export|print|show|hide|log in|sign up)\b/.test(label)) return;
+    }
+
+    recordRecentActivity();
+  }, [active, recordRecentActivity]);
   const [proteinAssaySamplesByTab, setProteinAssaySamplesByTab] = useState({});
   const handleProteinAssaySamplesChange = useCallback((tabIndex, samples) => {
     setProteinAssaySamplesByTab(previous => ({ ...previous, [tabIndex]: samples }));
@@ -1023,7 +1235,7 @@ export default function Home() {
   }, [active]);
 
   useEffect(() => {
-    const initialSettings = loadSettings(user?.id) || DEFAULT_SETTINGS;
+    const initialSettings = { ...DEFAULT_SETTINGS, ...(loadSettings(user?.id) || {}) };
     setSettings(initialSettings);
     if (user && isSyncEnabled()) {
       syncSettingsFromRemote(user.id);
@@ -1193,7 +1405,8 @@ export default function Home() {
     aiAssistant: lang === 'nl' ? 'AI Assistent' : 'AI Assistant',
     settings: lang === 'nl' ? 'Instellingen' : 'Settings',
     homepage: lang === 'nl' ? 'Homepage' : 'Homepage',
-    calculators: lang === 'nl' ? 'Calculators' : 'Calculators',
+    calculators: lang === 'nl' ? 'Berekeningen' : 'Calculations',
+    recent: lang === 'nl' ? 'Recent gebruikt' : 'Recently used',
     history: lang === 'nl' ? 'Geschiedenis' : 'History',
     clearAll: lang === 'nl' ? 'Alles wissen' : 'Clear All',
     empty: lang === 'nl' ? 'Leeg' : 'Empty',
@@ -1205,30 +1418,116 @@ export default function Home() {
     noToolsFound: lang === 'nl' ? 'Geen tools gevonden' : 'No tools found',
     tryAnotherSearch: lang === 'nl' ? 'Probeer een andere zoekterm.' : 'Try another search term.',
     clearSearch: lang === 'nl' ? 'Zoekopdracht wissen' : 'Clear search',
+    navigation: lang === 'nl' ? 'Toolnavigatie' : 'Tool navigation',
+    workspaces: lang === 'nl' ? 'Werkruimtes' : 'Workspaces',
+    newWorkspace: lang === 'nl' ? 'Nieuwe werkruimte' : 'New workspace',
+    close: lang === 'nl' ? 'Sluit' : 'Close',
   };
 
   const theme = APP_THEMES[settings.appTheme] || APP_THEMES.default;
   const isDark = theme.isDark;
-  const bgStyle = { background: theme.bg };
+  const accent = getAccentTokens(settings.accentColor);
+  const bgStyle = {
+    background: theme.bg,
+    '--app-accent': accent.color,
+    '--primary': accent.hsl,
+    '--primary-foreground': accent.foreground,
+    '--ring': accent.hsl,
+    '--sidebar-ring': accent.hsl,
+  };
   const iconStyle = theme.iconStyle;
 
   const titleColor = theme.textPrimary || (isDark ? 'text-white' : 'text-slate-800');
   const sectionLabelColor = isDark ? 'text-white/40' : 'text-slate-400';
-  const cardBg = theme.cardBg || (isDark ? 'bg-white/10 backdrop-blur-xl border-white/20' : 'bg-white border-slate-200/60');
   const cardTextPrimary = theme.textPrimary || (isDark ? 'text-white' : 'text-slate-800');
-  const backBtnColor = theme.iconTextColor || (isDark ? 'text-white/60 hover:text-white' : 'text-slate-500 hover:text-slate-800');
-  const settingsBtnColor = theme.iconTextColor || (isDark ? 'text-white/50 hover:bg-white/10 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700');
 
   const isHome = !active;
 
-  const goHome = () => { setActive(null); setSidebarOpen(false); setHistoryData(null); };
+  const activateWorkspace = workspaceId => {
+    const workspace = workspaceTabs.find(tab => tab.id === workspaceId);
+    if (!workspace) return;
+    setActiveWorkspaceId(workspaceId);
+    setActive(workspace.toolId);
+    if (workspace.subtabId) {
+      setActiveTab(previous => ({ ...previous, [workspace.toolId]: workspace.subtabId }));
+    }
+    setHistoryData(null);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const openTool = (toolId, tabId = null) => {
+    if (!toolId) {
+      activateWorkspace('home');
+      return;
+    }
+
+    if (toolId === 'notes' && active === 'notes') {
+      window.dispatchEvent(new CustomEvent('bibabench:notes-reset'));
+    }
+
+    // A tool has one top-level workspace. Its existing internal calculator tabs
+    // remain the supported way to create multiple independent instances.
+    const existing = workspaceTabs.find(tab => tab.toolId === toolId);
+    if (existing) {
+      setActiveWorkspaceId(existing.id);
+      setActive(toolId);
+      if (tabId) {
+        setActiveTab(previous => ({ ...previous, [toolId]: tabId }));
+        setWorkspaceTabs(previous => previous.map(tab => tab.id === existing.id ? { ...tab, subtabId: tabId } : tab));
+      }
+      setHistoryData(null);
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
+
+    const tool = TOOL_BY_ID.get(toolId);
+    const workspace = {
+      id: `workspace-${toolId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      toolId,
+      subtabId: tabId,
+      title: `${tool?.name || (toolId === 'ai' ? labels.aiAssistant : 'Workspace')} 1`,
+      icon: tool?.icon || (toolId === 'ai' ? RiRobot2Line : undefined),
+    };
+    setWorkspaceTabs(previous => [...previous, workspace]);
+    setActiveWorkspaceId(workspace.id);
+    setActive(toolId);
+    if (tabId) setActiveTab(previous => ({ ...previous, [toolId]: tabId }));
+    setHistoryData(null);
+    if (isMobile) setSidebarOpen(false);
+  };
+
+  const openRecentContext = item => {
+    openTool(item.toolId, item.subtabId);
+    const toolKey = item.subtabId ? `${item.toolId}-${item.subtabId}` : item.toolId;
+    const instanceExists = item.instanceId && (toolInstances[toolKey] || []).some(instance => instance.id === item.instanceId);
+    if (instanceExists) {
+      setActiveInstance(previous => ({ ...previous, [toolKey]: item.instanceId }));
+    }
+  };
+
+  const closeWorkspace = workspaceId => {
+    const index = workspaceTabs.findIndex(tab => tab.id === workspaceId);
+    if (index < 0 || workspaceTabs[index].toolId === null) return;
+    const remaining = workspaceTabs.filter(tab => tab.id !== workspaceId);
+    setWorkspaceTabs(remaining);
+    if (workspaceId !== activeWorkspaceId) return;
+    const nextWorkspace = remaining[Math.max(0, index - 1)] || remaining[0];
+    setActiveWorkspaceId(nextWorkspace.id);
+    setActive(nextWorkspace.toolId);
+    if (nextWorkspace.subtabId) {
+      setActiveTab(previous => ({ ...previous, [nextWorkspace.toolId]: nextWorkspace.subtabId }));
+    }
+    setHistoryData(null);
+  };
+
+  const goHome = () => activateWorkspace('home');
 
   const handleSelectTab = (toolId, tabId) => {
     setActiveTab(prev => ({ ...prev, [toolId]: tabId }));
   };
 
   const handleRestoreHistory = item => {
-    setActive(item.toolId);
+    openTool(item.toolId, item.data?.tab || null);
 
     if (item.data?.tab) {
       handleSelectTab(item.toolId, item.data.tab);
@@ -1304,102 +1603,30 @@ export default function Home() {
     }
   };
 
-  const getToolTheme = (toolId, isDark) => {
-    const themes = {
-      digest: {
-        bg: isDark ? 'bg-rose-950/20 border-rose-900/30' : 'bg-rose-50/80 border-rose-100',
-        activeTab: 'bg-rose-500 hover:bg-rose-600 text-white',
-        plusBtn: isDark ? 'bg-rose-900/20 text-rose-300 hover:bg-rose-900/40' : 'bg-rose-100 hover:bg-rose-200 text-rose-700',
-      },
-      ligation: {
-        bg: isDark ? 'bg-orange-950/20 border-orange-900/30' : 'bg-orange-50/80 border-orange-100',
-        activeTab: 'bg-orange-500 hover:bg-orange-600 text-white',
-        plusBtn: isDark ? 'bg-orange-900/20 text-orange-300 hover:bg-orange-900/40' : 'bg-orange-100 hover:bg-orange-200 text-orange-700',
-      },
-      gibson: {
-        bg: isDark ? 'bg-purple-950/20 border-purple-900/30' : 'bg-purple-50/80 border-purple-100',
-        activeTab: 'bg-purple-500 hover:bg-purple-600 text-white',
-        plusBtn: isDark ? 'bg-purple-900/20 text-purple-300 hover:bg-purple-900/40' : 'bg-purple-100 hover:bg-purple-200 text-purple-700',
-      },
-      pcr: {
-        bg: isDark ? 'bg-pink-950/20 border-pink-900/30' : 'bg-pink-50/80 border-pink-100',
-        activeTab: 'bg-pink-500 hover:bg-pink-600 text-white',
-        plusBtn: isDark ? 'bg-pink-900/20 text-pink-300 hover:bg-pink-900/40' : 'bg-pink-100 hover:bg-pink-200 text-pink-700',
-      },
-      dilution: {
-        bg: isDark ? 'bg-rose-950/20 border-rose-900/30' : 'bg-rose-50/80 border-rose-100',
-        activeTab: 'bg-rose-500 hover:bg-rose-600 text-white',
-        plusBtn: isDark ? 'bg-rose-900/20 text-rose-300 hover:bg-rose-900/40' : 'bg-rose-100 hover:bg-rose-200 text-rose-700',
-      },
-      protein: {
-        bg: isDark ? 'bg-purple-950/20 border-purple-900/30' : 'bg-purple-50/80 border-purple-100',
-        activeTab: 'bg-purple-500 hover:bg-purple-600 text-white',
-        plusBtn: isDark ? 'bg-purple-900/20 text-purple-300 hover:bg-purple-900/40' : 'bg-purple-100 hover:bg-purple-200 text-purple-700',
-      },
-      gel: {
-        bg: isDark ? 'bg-blue-950/20 border-blue-900/30' : 'bg-blue-50/80 border-blue-100',
-        activeTab: 'bg-blue-500 hover:bg-blue-600 text-white',
-        plusBtn: isDark ? 'bg-blue-900/20 text-blue-300 hover:bg-blue-900/40' : 'bg-blue-100 hover:bg-blue-200 text-blue-700',
-      },
-      plasmid: {
-        bg: isDark ? 'bg-teal-950/20 border-teal-900/30' : 'bg-teal-50/80 border-teal-100',
-        activeTab: 'bg-teal-500 hover:bg-teal-600 text-white',
-        plusBtn: isDark ? 'bg-teal-900/20 text-teal-300 hover:bg-teal-900/40' : 'bg-teal-100 hover:bg-teal-200 text-teal-700',
-      },
-      buffer: {
-        bg: isDark ? 'bg-orange-950/20 border-orange-900/30' : 'bg-orange-50/80 border-orange-100',
-        activeTab: 'bg-orange-500 hover:bg-orange-600 text-white',
-        plusBtn: isDark ? 'bg-orange-900/20 text-orange-300 hover:bg-orange-900/40' : 'bg-orange-100 hover:bg-orange-200 text-orange-700',
-      },
-      protocols: {
-        bg: isDark ? 'bg-yellow-950/20 border-yellow-900/30' : 'bg-yellow-50/80 border-yellow-100',
-        activeTab: 'bg-yellow-500 hover:bg-yellow-600 text-white',
-        plusBtn: isDark ? 'bg-yellow-900/20 text-yellow-300 hover:bg-yellow-900/40' : 'bg-yellow-100 hover:bg-yellow-200 text-yellow-700',
-      },
-    };
-    return themes[toolId] || {
-      bg: isDark ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200',
-      activeTab: 'bg-slate-800 text-white',
-      plusBtn: 'bg-slate-200 hover:bg-slate-300 text-slate-700',
-    };
-  };
-
   const renderToolTabs = (toolKey) => {
     if (isHome || active === 'ai') return null;
     const currentTabs = toolInstances[toolKey] || [];
     const currentActiveId = activeInstance[toolKey];
-    const t = getToolTheme(active, isDark);
 
     return (
-      <div className="w-fit mt-1 mb-3">
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 shadow-sm transition-all">
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-            <div className="flex items-center gap-1.5 flex-1">
+      <div data-recent-ignore="true" className="mb-4 mt-1 min-w-0 border-b border-[#e5e5e5] dark:border-white/10">
+        <div className="flex min-w-0 items-end gap-3 overflow-x-auto scrollbar-none">
+          <span className={`shrink-0 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${isDark ? 'text-white/35' : 'text-[#8a8a8a]'}`}>
+            {lang === 'nl' ? 'Berekeningen' : 'Calculations'}
+          </span>
+          <div className="flex min-w-0 items-end gap-0.5">
               {currentTabs.map((tab) => {
                 const isActive = tab.id === currentActiveId;
                 const isEditing = editingTab && editingTab.toolKey === toolKey && editingTab.tabId === tab.id;
-                const customColor = tab.color ? TAB_COLORS.find(c => c.id === tab.color) : null;
-                const activeTabStyle = customColor ? customColor.activeClass : t.activeTab;
                 return (
                   <div
                     key={tab.id}
-                    onClick={() => setActiveInstance(prev => ({ ...prev, [toolKey]: tab.id }))}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setEditingTab({ toolKey, tabId: tab.id, name: tab.name });
-                    }}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       setContextMenu({ x: e.clientX, y: e.clientY, toolKey, tab });
                     }}
-                    className={`group flex items-center gap-2 px-3 py-1.5 rounded-xl cursor-pointer text-xs font-semibold select-none transition-all ${
-                      isActive
-                        ? activeTabStyle
-                        : isDark
-                        ? 'bg-slate-800 hover:bg-slate-700/80 text-slate-300 border border-slate-700/40'
-                        : 'bg-slate-100 hover:bg-slate-200/80 text-slate-600 border border-slate-200/60'
-                    }`}
+                    className="group relative flex h-9 shrink-0 items-center"
                   >
                     {isEditing ? (
                       <input
@@ -1414,42 +1641,56 @@ export default function Home() {
                             setEditingTab(null);
                           }
                         }}
-                        className="bg-transparent border-b border-current/40 focus:outline-none px-0.5 text-xs text-inherit w-16 text-center"
+                        className="mx-2 w-20 border-b border-current/40 bg-transparent px-0.5 text-center text-xs text-inherit focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                         autoFocus
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => e.stopPropagation()}
                       />
                     ) : (
-                      <span>{tab.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveInstance(prev => ({ ...prev, [toolKey]: tab.id }))}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setEditingTab({ toolKey, tabId: tab.id, name: tab.name });
+                        }}
+                        className={`h-full px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 ${
+                          isActive
+                            ? isDark ? 'text-white' : 'text-[#0d0d0d]'
+                            : isDark ? 'text-white/45 hover:bg-white/5 hover:text-white/80' : 'text-[#6f6f6f] hover:bg-[#f7f7f8] hover:text-[#0d0d0d]'
+                        }`}
+                      >
+                        {tab.name}
+                      </button>
                     )}
                     {currentTabs.length > 1 && (
                       <button
+                        type="button"
+                        aria-label={`${labels.close} ${tab.name}`}
                         onClick={(e) => handleRemoveTab(toolKey, tab.id, e)}
-                        className={`rounded-full p-0.5 transition-colors ${
-                          isActive
-                            ? 'hover:bg-white/20 text-white/80 hover:text-white'
-                            : 'hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500'
-                        }`}
+                        className={`mr-1 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 ${isDark ? 'text-white/40 hover:bg-white/10 hover:text-white' : 'text-[#8a8a8a] hover:bg-[#ececec] hover:text-[#0d0d0d]'}`}
                       >
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
                     )}
+                    {isActive && <span className={`absolute inset-x-1 bottom-0 h-0.5 ${isDark ? 'bg-white/80' : 'bg-[#0d0d0d]'}`} />}
                   </div>
                 );
               })}
               
               <button
+                type="button"
                 onClick={() => handleAddTab(toolKey)}
-                className={`p-1.5 rounded-xl transition-all flex items-center justify-center ${t.plusBtn}`}
-                title="Open new tab"
+                className={`mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${isDark ? 'text-white/45 hover:bg-white/10 hover:text-white' : 'text-[#6f6f6f] hover:bg-[#ececec] hover:text-[#0d0d0d]'}`}
+                aria-label={lang === 'nl' ? 'Nieuwe berekening openen' : 'Open new calculation'}
+                title={lang === 'nl' ? 'Nieuwe berekening openen' : 'Open new calculation'}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                 </svg>
               </button>
-            </div>
           </div>
         </div>
       </div>
@@ -1470,115 +1711,74 @@ export default function Home() {
     }
   }
 
+  const normalizedHomeSearch = homeSearch.trim().toLowerCase();
+  const homeSearchTerms = normalizedHomeSearch.split(/\s+/).filter(Boolean);
+  const matchesHomeSearch = tool => {
+    if (!homeSearchTerms.length) return true;
+    const searchText = [
+      tool.name,
+      TOOL_DESCRIPTIONS[tool.id],
+      ...TOOL_SEARCH_ITEMS.filter(item => item.toolId === tool.id).flatMap(item => [item.label, item.keywords]),
+    ].join(' ').toLowerCase();
+    return homeSearchTerms.every(term => searchText.includes(term));
+  };
+  const visibleHomeGroups = [
+    { id: 'calculators', label: labels.calculators, tools: CALCULATORS.filter(matchesHomeSearch) },
+    ...TOOL_GROUPS.map(group => ({ ...group, tools: group.tools.filter(matchesHomeSearch) })),
+  ].filter(group => group.tools.length > 0);
+  const visibleRecentContexts = recentContexts.filter(item => item.toolId === 'ai' || TOOL_BY_ID.has(item.toolId));
+
   return (
-    <div className="h-screen flex flex-col overflow-hidden" style={bgStyle}>
+    <div className="app-accent h-screen flex flex-col overflow-hidden" style={bgStyle}>
       {/* ── Header ── */}
       <header
-        className={`border-b sticky top-0 z-[60] transition-all ${isMacElectron ? 'h-11' : isMobile ? 'h-14' : 'h-11'
-          }`}
-        style={{ ...bgStyle, borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(203,213,225,0.4)', WebkitAppRegion: isElectron ? 'drag' : 'initial' }}
+        className={`sticky top-0 z-[60] h-11 shrink-0 border-b ${isDark ? 'border-white/10 bg-slate-950' : 'border-[#e5e5e5] bg-[#f7f7f8]'}`}
+        style={{ WebkitAppRegion: isElectron ? 'drag' : 'initial' }}
       >
-        <div className={`px-4 h-full flex items-center ${isMacElectron ? 'max-w-none pl-20' : 'w-full'}`}>
-          <div className="flex items-center justify-between w-full">
-            <div className="flex items-center gap-1 sm:gap-0.5">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10 text-white/70' : 'hover:bg-slate-100 text-slate-600'
-                  }`}
-                style={{ WebkitAppRegion: 'no-drag' }}
-                title={sidebarOpen ? "Close sidebar" : "Open sidebar"}
+        <div className={`relative flex h-full items-center justify-center ${isMacElectron ? 'pl-28 pr-3' : 'px-3'}`}>
+          <div
+            className="absolute top-1/2 -translate-y-1/2"
+            style={{ left: isMacElectron ? 76 : 8, WebkitAppRegion: 'no-drag' }}
+          >
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(previous => !previous)}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${isDark ? 'text-white/70 hover:bg-white/10' : 'text-[#5d5d5d] hover:bg-[#e9e9e9]'}`}
+              aria-label={sidebarOpen ? (lang === 'nl' ? 'Zijbalk sluiten' : 'Close sidebar') : (lang === 'nl' ? 'Zijbalk openen' : 'Open sidebar')}
+              title={sidebarOpen ? (lang === 'nl' ? 'Zijbalk sluiten' : 'Close sidebar') : (lang === 'nl' ? 'Zijbalk openen' : 'Open sidebar')}
+            >
+              <PanelLeft className="h-[18px] w-[18px]" aria-hidden="true" />
+            </button>
+          </div>
+          <span className={`max-w-[55vw] truncate text-xs font-semibold ${isDark ? 'text-white/70' : 'text-[#454545]'}`}>
+            {isHome ? 'BiBaBenchBuddy' : (TOOL_BY_ID.get(active)?.name || labels.aiAssistant)}
+          </span>
+          <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
+            {!isOnline && (
+              <div
+                className={`mr-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'text-amber-300' : 'text-amber-700'}`}
+                title={lang === 'nl' ? 'Je bent offline — synchronisatie is gepauzeerd' : 'You are offline — sync is paused'}
               >
-                <PanelLeft className={`w-5 h-5 transition-transform duration-300 ${sidebarOpen ? 'rotate-180 scale-110' : ''}`} />
-              </button>
-
-              <button
-                onClick={goHome}
-                className={`w-10 h-10 flex items-center justify-center rounded-xl touch-manipulation transition-all duration-200 ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
-                  }`}
-                style={{ WebkitAppRegion: 'no-drag' }}
-                title="Home"
-              >
-                <img src={logo} alt="BiBaBenchBuddy Logo" className="w-9 h-9 object-contain" />
-              </button>
-
-              {!isHome && (
-                <button
-                  onClick={goHome}
-                  className={`h-9 px-2.5 flex items-center gap-1.5 text-xs sm:text-sm rounded-xl touch-manipulation transition-colors ml-1 ${backBtnColor} ${isDark ? 'hover:bg-white/10' : 'hover:bg-slate-100'
-                    }`}
-                  style={{ WebkitAppRegion: 'no-drag' }}
-                >
-                  <ArrowLeft className="w-4 h-4" /> {labels.back}
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 sm:gap-2.5">
-              {/* Offline indicator */}
-              {!isOnline && (
-                <div 
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors ${
-                    isDark ? 'bg-amber-500/10 text-amber-300 border-amber-500/20' : 'bg-amber-50 text-amber-600 border-amber-200'
-                  }`}
-                  title={
-                    lang === 'nl' ? 'Je bent offline - berekeningen werken, maar cloud-synchronisatie is gepauzeerd' : 'You are offline - calculations work, but cloud sync is paused'
-                  }
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                  <span className="hidden md:inline text-[10px] uppercase font-bold tracking-wider">
-                    {lang === 'nl' ? 'Offline' : 'Offline'}
-                  </span>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setShowToolFinder(true)}
-                className="group relative flex items-center justify-center transition-all duration-300 active:scale-95"
-                style={{ WebkitAppRegion: 'no-drag' }}
-                aria-label={labels.toolFinder}
-                title={labels.toolFinderTooltip}
-              >
-                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-colors ${settingsBtnColor}`}>
-                  <Search className="w-5 h-5" />
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActive('ai')}
-                className="group relative flex items-center justify-center transition-all duration-300 active:scale-95"
-                style={{ WebkitAppRegion: 'no-drag' }}
-                aria-label={labels.aiAssistant}
-                title={labels.aiAssistant}
-              >
-                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-all ${
-                  active === 'ai'
-                    ? (isDark ? 'bg-indigo-500/25 text-indigo-300 ring-1 ring-indigo-400/30' : 'bg-indigo-50 text-indigo-600 ring-1 ring-indigo-200')
-                    : settingsBtnColor
-                }`}>
-                  <RiRobot2Line className="w-5 h-5" />
-                </div>
-              </button>
-
-              <button
-                onClick={() => setShowSettings(true)}
-                className="group relative flex items-center justify-center transition-all duration-300 active:scale-95"
-                style={{ WebkitAppRegion: 'no-drag' }}
-                title={user ? (profile?.display_name || user.email) : "Settings"}
-              >
-                <div className={`w-9 h-9 flex items-center justify-center rounded-xl touch-manipulation transition-colors ${settingsBtnColor}`}>
-                  <Settings className="w-5 h-5" />
-                </div>
-              </button>
-            </div>
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                <span className="hidden sm:inline">Offline</span>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${isDark ? 'text-white/60 hover:bg-white/10 hover:text-white' : 'text-[#6f6f6f] hover:bg-[#e9e9e9] hover:text-[#0d0d0d]'}`}
+              title={labels.settings}
+              aria-label={labels.settings}
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </header>
 
       {/* ── Body ── */}
-      <div className={`flex flex-1 min-h-0 overflow-hidden w-full relative ${isMacElectron ? 'max-w-[1400px] mx-auto' : ''}`}>
-        {sidebarOpen && (
+      <div className="relative flex min-h-0 w-full flex-1 overflow-hidden">
+        {(isMobile ? sidebarOpen : true) && (
           <>
             {isMobile && (
               <div
@@ -1590,12 +1790,8 @@ export default function Home() {
             <Sidebar
               active={active}
               onSelect={(id) => {
-                if (id === 'notes' && active === 'notes') {
-                  window.dispatchEvent(new CustomEvent('bibabench:notes-reset'));
-                }
-                setActive(id);
-                setHistoryData(null);
-                if (isMobile) setSidebarOpen(false);
+                if (id) openTool(id);
+                else goHome();
               }}
               onSelectTab={handleSelectTab}
               activeTab={activeTab}
@@ -1605,68 +1801,152 @@ export default function Home() {
               onRestoreHistory={(item) => {
                 handleRestoreHistory(item);
               }}
-              isMacElectron={isMacElectron}
+              onOpenAI={() => openTool('ai')}
               isMobile={isMobile}
+              collapsed={!isMobile && !sidebarOpen}
               labels={labels}
               lang={lang}
+              width={sidebarWidth}
+              onResizeStart={handleSidebarResizeStart}
             />
           </>
         )}
 
+        <div className="flex min-w-0 flex-1 flex-col">
+          <WorkspaceTabs
+            tabs={workspaceTabs}
+            activeId={activeWorkspaceId}
+            onSelect={activateWorkspace}
+            onClose={closeWorkspace}
+            onNew={() => {
+              setShowToolFinder(true);
+            }}
+            isDark={isDark}
+            labels={labels}
+          />
+
         <main 
-          onClick={() => { if (sidebarOpen) setSidebarOpen(false); }}
-          className={`flex-1 ${active === 'plasmid' ? 'px-1 sm:px-2.5 lg:px-3.5 pt-1 pb-1' : isHome ? 'px-2 sm:px-6 lg:px-8 pt-8 pb-0' : 'px-2 sm:px-6 lg:px-8 pt-2 pb-8'} overflow-y-auto overflow-x-hidden relative flex flex-col cursor-default`}
+          onClick={() => { if (isMobile && sidebarOpen) setSidebarOpen(false); }}
+          onInputCapture={handleToolActivityCapture}
+          onChangeCapture={handleToolActivityCapture}
+          onClickCapture={handleToolActivityCapture}
+          className={`compact-app flex-1 ${active === 'plasmid' ? 'px-1 sm:px-2.5 lg:px-3.5 pt-1 pb-1' : isHome ? 'px-3 sm:px-5 lg:px-7 pt-5 pb-0' : 'tool-workspace px-2 sm:px-4 lg:px-6 pt-2 pb-6'} overflow-y-auto overflow-x-hidden relative flex flex-col cursor-default`}
         >
 
           {/* ── HOME ── */}
           {isHome && (
-            <div className="space-y-7 flex-1 flex flex-col">
-              <div className="mb-2">
-                <div className="text-center mb-2">
-                  <h2 className={`text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight ${titleColor}`}>
+            <div className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col">
+              <div className="mb-6 flex flex-col gap-4 border-b border-[#e5e5e5] pb-5 dark:border-white/10 lg:flex-row lg:items-end lg:justify-between">
+                <div className="min-w-0">
+                  <h2 className={`text-xl font-bold tracking-tight sm:text-2xl ${titleColor}`}>
                     Lab tools that actually save time
                   </h2>
+                  <div className="mt-1 max-w-2xl"><ScienceJoke isDark={isDark} /></div>
                 </div>
-                <ScienceJoke isDark={isDark} />
+                <div className="w-full lg:w-auto">
+                  <label className={`flex h-9 min-w-0 items-center gap-2 rounded-lg border px-3 transition-[border-color,box-shadow] focus-within:ring-2 focus-within:ring-slate-400/40 sm:w-80 ${
+                    isDark ? 'border-white/10 bg-white/5 text-white' : 'border-[#d9d9d9] bg-white text-[#0d0d0d]'
+                  }`}>
+                    <Search className={`h-4 w-4 shrink-0 ${isDark ? 'text-white/40' : 'text-slate-400'}`} />
+                    <span className="sr-only">{labels.searchTools}</span>
+                    <input
+                      type="text"
+                      inputMode="search"
+                      value={homeSearch}
+                      onChange={event => setHomeSearch(event.target.value)}
+                      placeholder={labels.searchTools}
+                      name="tool-search"
+                      autoComplete="off"
+                      className="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none shadow-none ring-0"
+                    />
+                    {homeSearch && (
+                      <button type="button" onClick={() => setHomeSearch('')} className="rounded p-0.5 opacity-50 hover:opacity-100" aria-label={labels.clearSearch}>
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </label>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-8 min-[1080px]:grid-cols-[minmax(360px,.88fr)_minmax(520px,1.12fr)]">
-                <div className="grid content-start gap-6">
-                  <div className="flex flex-col space-y-4">
-                    <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>Calculators</h3>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
-                      {CALCULATORS.map(calc => (
-                        <button key={calc.id} onClick={() => { setActive(calc.id); setHistoryData(null); }} className={`group flex min-h-[124px] flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
-                          <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `bg-gradient-to-br ${calc.gradient}`}`} style={iconStyle || {}}><calc.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} /></div>
-                          <p className={`mb-1 text-sm font-semibold leading-tight sm:text-base ${cardTextPrimary}`}>{calc.name}</p>
+              <div className="space-y-5">
+                {!homeSearchTerms.length && visibleRecentContexts.length > 0 && (
+                  <section aria-labelledby="home-recent-heading">
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <Clock className={`h-3.5 w-3.5 ${isDark ? 'text-white/45' : 'text-[#737373]'}`} aria-hidden="true" />
+                      <h3 id="home-recent-heading" className={`text-[11px] font-semibold tracking-wide ${isDark ? 'text-white/55' : 'text-[#5f5f5f]'}`}>
+                        {labels.recent}
+                      </h3>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(190px,240px))]">
+                      {visibleRecentContexts.map(item => {
+                        const tool = TOOL_BY_ID.get(item.toolId);
+                        const Icon = tool?.icon || RiRobot2Line;
+                        const subtool = TOOL_TABS[item.toolId]?.find(tab => tab.id === item.subtabId);
+                        const toolKey = item.subtabId ? `${item.toolId}-${item.subtabId}` : item.toolId;
+                        const instance = (toolInstances[toolKey] || []).find(tab => tab.id === item.instanceId);
+                        const detail = [subtool?.label, instance?.name || item.instanceName].filter(Boolean).join(' · ')
+                          || (lang === 'nl' ? 'Werkruimte' : 'Workspace');
+
+                        return (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => openRecentContext(item)}
+                            className={`group flex min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--app-accent)] ${
+                              isDark ? 'border-white/10 bg-white/5 hover:bg-white/10' : 'border-[#e5e5e5] bg-white hover:border-[#cccccc] hover:bg-[#fafafa]'
+                            }`}
+                          >
+                            <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${tool?.direction || 'bg-gradient-to-br'} ${tool?.gradient || 'from-slate-600 to-slate-800'}`}>
+                              <Icon className="h-4 w-4 text-white" aria-hidden="true" />
+                            </span>
+                            <span className="min-w-0">
+                              <span className={`block truncate text-xs font-semibold ${cardTextPrimary}`}>{tool?.name || labels.aiAssistant}</span>
+                              <span className={`block truncate text-[11px] ${isDark ? 'text-white/40' : 'text-[#777]'}`}>{detail}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
+                {visibleHomeGroups.map(group => (
+                  <section key={group.id} aria-labelledby={`home-group-${group.id}`}>
+                    <div className="mb-2.5 flex items-center gap-2">
+                      <h3 id={`home-group-${group.id}`} className={`text-[11px] font-bold uppercase tracking-[0.14em] ${sectionLabelColor}`}>{group.label}</h3>
+                      <span className={`text-[10px] ${isDark ? 'text-white/25' : 'text-slate-300'}`}>{group.tools.length}</span>
+                    </div>
+                    <div className="grid grid-cols-2 justify-start gap-2.5 sm:grid-cols-[repeat(3,minmax(0,180px))] md:grid-cols-[repeat(4,minmax(0,180px))] lg:grid-cols-[repeat(5,minmax(0,180px))] xl:grid-cols-[repeat(6,minmax(0,180px))]">
+                      {group.tools.map(tool => (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          onClick={() => openTool(tool.id)}
+                          title={`${tool.name} — ${TOOL_DESCRIPTIONS[tool.id]}`}
+                          className={`group flex aspect-[4/3] min-w-0 flex-col items-center justify-center gap-3 rounded-xl border p-3 text-center transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 ${
+                            isDark ? 'border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10' : 'border-[#e5e5e5] bg-[#f7f7f8] hover:border-[#d2d2d2] hover:bg-white hover:shadow-sm'
+                          }`}
+                        >
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${iconStyle ? '' : `${tool.direction || 'bg-gradient-to-br'} ${tool.gradient}`}`} style={iconStyle || {}}>
+                            <tool.icon className={`h-[18px] w-[18px] ${theme?.iconTextColor || 'text-white'}`} aria-hidden="true" />
+                          </span>
+                          <span className={`min-w-0 text-sm font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</span>
                         </button>
                       ))}
                     </div>
+                  </section>
+                ))}
+                {visibleHomeGroups.length === 0 && (
+                  <div className={`rounded-xl border border-dashed px-4 py-10 text-center ${isDark ? 'border-white/15 text-white/45' : 'border-slate-300 text-slate-500'}`}>
+                    <Search className="mx-auto mb-2 h-5 w-5 opacity-50" />
+                    <p className="text-sm font-medium">{labels.noToolsFound}</p>
+                    <button type="button" onClick={() => setHomeSearch('')} className="accent-text mt-2 text-xs hover:underline">{labels.clearSearch}</button>
                   </div>
-                </div>
-
-                <div className="grid content-start gap-6">
-                  {[{ id: 'lab', label: 'Lab & Visualization', tools: HOME_LAB_TOOLS, columns: 'md:grid-cols-3' }, { id: 'general', label: 'General', tools: HOME_GENERAL_TOOLS, columns: 'md:grid-cols-4' }].map(group => (
-                    <div key={group.id} className="flex flex-col space-y-3">
-                      <h3 className={`px-1 text-xs font-bold uppercase tracking-widest ${sectionLabelColor}`}>{group.label}</h3>
-                      <div className={`grid grid-cols-2 gap-3 md:gap-4 ${group.columns}`}>
-                        {group.tools.map(tool => (
-                        <button key={tool.id} onClick={() => { setActive(tool.id); setHistoryData(null); }}
-                          className={`group flex min-h-[112px] min-w-0 flex-col items-center justify-center rounded-2xl p-3 text-center shadow-sm transition-all duration-200 hover:-translate-y-1 hover:shadow-lg ${cardBg} ${theme.isGlass ? 'backdrop-blur-xl' : ''}`}>
-                          <div className={`mb-3 inline-flex rounded-xl p-3 shadow-md transition-transform group-hover:scale-110 ${iconStyle ? '' : `${tool.direction || 'bg-gradient-to-br'} ${tool.gradient}`}`} style={iconStyle || {}}>
-                            <tool.icon className={`h-6 w-6 ${theme?.iconTextColor || 'text-white'}`} />
-                          </div>
-                          <p className={`w-full break-words text-sm font-semibold leading-tight ${cardTextPrimary}`}>{tool.name}</p>
-                        </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                )}
               </div>
 
               {/* Footer moved to homepage body */}
-              <div className={`mt-auto pt-12 pb-3 text-center text-xs flex flex-col items-center gap-3 transition-colors ${isDark ? 'text-white/30' : 'text-slate-400'}`}>
+              <div className={`pt-8 pb-3 text-center text-[11px] flex flex-col items-center gap-2 transition-colors ${isDark ? 'text-white/30' : 'text-slate-400'}`}>
                 <p>
                   {settings.language === 'nl'
                     ? 'Controleer altijd berekeningen voor gebruik in experimenten'
@@ -1747,6 +2027,7 @@ export default function Home() {
           })}
         </main>
       </div>
+      </div>
 
 
 
@@ -1760,12 +2041,11 @@ export default function Home() {
 
       <ToolFinder
         open={showToolFinder}
-        onClose={() => setShowToolFinder(false)}
+        onClose={() => {
+          setShowToolFinder(false);
+        }}
         onSelect={item => {
-          setActive(item.toolId);
-          setHistoryData(null);
-          if (item.tabId) handleSelectTab(item.toolId, item.tabId);
-          setSidebarOpen(false);
+          openTool(item.toolId, item.tabId);
         }}
         isDark={isDark}
         isMobile={isMobile}
@@ -1776,6 +2056,7 @@ export default function Home() {
         <AuthWelcomeModal
           open={showAuthWelcome}
           onClose={dismissAuthWelcome}
+          initialMode={authWelcomeMode}
         />
       )}
 

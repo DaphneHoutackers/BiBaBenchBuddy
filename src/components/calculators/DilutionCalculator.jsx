@@ -332,7 +332,7 @@ export default function DilutionCalculator({ historyData, externalTab, onTabChan
       </div>
 
       <Tabs value={mode} onValueChange={v => { setMode(v); onTabChange?.(v); }}>
-        <TabsList className="bg-slate-200/90 dark:bg-slate-950/80 border border-slate-300/40 dark:border-slate-800/60 shadow-sm p-1">
+        <TabsList aria-label="Dilution modes">
           <TabsTrigger value="c1v1" className="flex items-center gap-2">
             <Calculator className="w-4 h-4" />
             C₁V₁ = C₂V₂

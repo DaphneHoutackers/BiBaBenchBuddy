@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LogIn, UserPlus } from 'lucide-react';
+import { LockKeyhole, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { isSyncEnabled, supabase } from '@/lib/supabase';
 import { makeId } from '@/utils/makeId';
@@ -85,10 +85,11 @@ export function AccountRequired({ toolName, children }) {
   const { user } = useAuth();
   if (user) return children;
   const openAuth = mode => window.dispatchEvent(new CustomEvent('bibabench:open-auth', { detail: { mode } }));
-  return <div className="mx-auto mt-10 max-w-lg rounded-2xl border border-teal-200 bg-teal-50/70 p-6 text-center shadow-sm">
-    <h2 className="text-lg font-bold text-slate-800">Log eerst in om {toolName} te gebruiken</h2>
-    <p className="mt-2 text-sm leading-6 text-slate-600">Je gegevens worden dan veilig aan jouw account gekoppeld en automatisch gesynchroniseerd op je andere apparaten.</p>
-    <div className="mt-5 flex justify-center gap-2">
+  return <div className="mx-auto mt-8 max-w-lg rounded-xl border border-slate-200 bg-white p-5 text-center shadow-sm dark:border-slate-800 dark:bg-white/[0.035]">
+    <span className="accent-soft mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded-lg"><LockKeyhole className="h-[18px] w-[18px]" /></span>
+    <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">Log in om {toolName} te gebruiken</h2>
+    <p className="mx-auto mt-1.5 max-w-md text-sm leading-5 text-slate-500 dark:text-slate-400">De rest van de app blijft zonder account beschikbaar. Log alleen in om deze tool veilig op te slaan en tussen apparaten te synchroniseren.</p>
+    <div className="mt-4 flex justify-center gap-2">
       <button type="button" onClick={() => openAuth('login')} className={secondaryButton}><LogIn className="h-4 w-4" />Log in</button>
       <button type="button" onClick={() => openAuth('signup')} className={primaryButton}><UserPlus className="h-4 w-4" />Sign up</button>
     </div>
@@ -98,12 +99,12 @@ export function AccountRequired({ toolName, children }) {
 export const uid = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 export const PALETTE = ['#db2777', '#f97316', '#eab308', '#22c55e', '#0ea5e9', '#8b5cf6', '#64748b'];
 
-export function ToolShell({ icon: Icon, title, description, actions, children }) {
-  return <div className="space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-pink-50 text-pink-600 dark:bg-pink-950/40"><Icon className="h-5 w-5" /></span>
-        <div><h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{title}</h2><p className="text-sm text-slate-500 dark:text-slate-400">{description}</p></div>
+export function ToolWorkspace({ icon: Icon, title, description, actions, children }) {
+  return <div className="space-y-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/70 pb-3 dark:border-slate-800">
+      <div className="flex items-center gap-2.5">
+        <span className="accent-soft flex h-9 w-9 items-center justify-center rounded-lg"><Icon className="h-4.5 w-4.5" /></span>
+        <div><h2 className="text-lg font-bold leading-tight text-slate-800 dark:text-slate-100">{title}</h2><p className="text-xs text-slate-500 dark:text-slate-400">{description}</p></div>
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -111,7 +112,9 @@ export function ToolShell({ icon: Icon, title, description, actions, children })
   </div>;
 }
 
-export const primaryButton = 'inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-pink-600 px-3 text-sm font-semibold text-white transition hover:bg-pink-700 disabled:opacity-50';
+export const ToolShell = ToolWorkspace;
+
+export const primaryButton = 'accent-button inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-semibold transition disabled:opacity-50';
 export const secondaryButton = 'inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200';
-export const fieldClass = 'h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-pink-400 focus:ring-2 focus:ring-pink-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
-export const panelClass = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-white/10';
+export const fieldClass = 'accent-field h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:ring-2 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
+export const panelClass = 'rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-white/10';
