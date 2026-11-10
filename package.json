@@ -12,22 +12,25 @@
         "url": "https://github.com/DaphneHoutackers/BiBaBenchBuddy"
     },
     "main": "dist-electron/main.js",
-    "version": "2.2.3",
+    "version": "2.2.4",
     "scripts": {
-        "test": "node --test src/lib/*.test.js",
+        "test": "node --test src/lib/*.test.js scripts/*.test.mjs",
         "dev": "vite",
         "clean": "rm -rf dist dist-electron release",
         "build": "vite build",
-        "app:build": "vite build && electron-builder",
+        "app:build": "node scripts/prepare-desktop.mjs && vite build && electron-builder --publish never",
         "lint": "eslint . --quiet",
         "lint:fix": "eslint . --fix",
         "typecheck": "tsc -p ./jsconfig.json",
         "preview": "vite preview",
-        "app:mac": "rm -rf dist dist-electron release && vite build && electron-builder --mac dmg",
+        "app:mac": "node scripts/prepare-desktop.mjs mac && vite build && electron-builder --mac dmg --arm64 --publish never",
         "clean:node": "rm -rf node_modules",
         "clean:package": "rm -rf package-lock.json",
         "analyze": "ANALYZE=true npm run app:mac",
-        "update-enzymes": "node scripts/update-enzymes.js"
+        "update-enzymes": "node scripts/update-enzymes.js",
+        "app:win": "node scripts/prepare-desktop.mjs win && vite build && electron-builder --win nsis --x64 --publish never",
+        "release:check": "node scripts/check-release.mjs",
+        "release:metadata": "node scripts/release-metadata.mjs"
     },
     "dependencies": {
         "@radix-ui/react-dialog": "^1.1.6",
@@ -43,7 +46,6 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "dompurify": "^3.4.17",
-        "electron-updater": "^6.8.3",
         "html2canvas": "^1.4.1",
         "lucide-react": "^0.475.0",
         "react": "^18.2.0",
@@ -113,8 +115,9 @@
             ],
             "category": "public.app-category.education",
             "icon": "build/icon.icns",
-            "identity": null,
-            "artifactName": "BiBaBenchBuddy-${version}-mac-${arch}.${ext}"
+            "identity": "-",
+            "artifactName": "BiBaBenchBuddy-${version}-mac-${arch}.${ext}",
+            "notarize": false
         },
         "dmg": {
             "title": "BiBaBenchBuddy",
@@ -156,11 +159,6 @@
             "icon": "build/icon.ico",
             "artifactName": "BiBaBenchBuddy-${version}-Setup.${ext}"
         },
-        "publish": [
-            {
-                "provider": "github"
-            }
-        ]
-    },
-    "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+        "publish": null
+    }
 }

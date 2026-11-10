@@ -1,12 +1,20 @@
 import { escapeHtml } from '../src/lib/htmlEncoding.js';
 import { app, BrowserWindow, dialog, Menu, shell, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AUTH_PROTOCOL = 'bibabenchbuddy';
+// Honor an explicitly selected profile before any session or window is created.
+// A separate profile must not take over the installed app's global OAuth handler.
+const customProfile = app.commandLine.getSwitchValue('user-data-dir');
+if (customProfile) {
+  const profilePath = path.resolve(customProfile);
+  app.setPath('userData', profilePath);
+  app.setPath('sessionData', profilePath);
+  app.setAppLogsPath(path.join(profilePath, 'logs'));
+}
 
 let mainWindow = null;
 let pendingAuthCallback = null;
@@ -45,10 +53,12 @@ const queueAuthCallback = (value) => {
   return true;
 };
 
-if (process.defaultApp && process.argv[1]) {
-  app.setAsDefaultProtocolClient(AUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
-} else {
-  app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+if (!customProfile) {
+  if (process.defaultApp && process.argv[1]) {
+    app.setAsDefaultProtocolClient(AUTH_PROTOCOL, process.execPath, [path.resolve(process.argv[1])]);
+  } else {
+    app.setAsDefaultProtocolClient(AUTH_PROTOCOL);
+  }
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -472,9 +482,7 @@ app.whenReady().then(async () => {
   const startupCallback = process.argv.find(isAuthCallbackUrl);
   if (startupCallback) queueAuthCallback(startupCallback);
 
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify();
-  }
+  // This certificate-free release uses manual installer updates only.
 });
 
 ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
@@ -640,25 +648,6 @@ ipcMain.handle('consume-auth-callback', async () => {
 // Set quitting flag so the window close handler allows actual quit
 app.on('before-quit', () => {
   app.isQuitting = true;
-});
-
-autoUpdater.on('update-downloaded', () => {
-  dialog
-    .showMessageBox({
-      type: 'info',
-      title: 'Update Available',
-      message: 'A new version has been downloaded. Restart the app to install the update.',
-      buttons: ['Restart now', 'Later'],
-    })
-    .then((result) => {
-      if (result.response === 0) {
-        autoUpdater.quitAndInstall();
-      }
-    });
-});
-
-autoUpdater.on('error', (error) => {
-  console.error('Auto updater error:', error);
 });
 
 app.on('window-all-closed', () => {

@@ -1,99 +1,118 @@
-name: Build and Release Desktop Apps
+name: Build Desktop Installers
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build_release:
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
-
+        include:
+          - os: macos-latest
+            platform: mac
+            installer: '*-mac-arm64.dmg'
+          - os: windows-latest
+            platform: win
+            installer: '*-Setup.exe'
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v4
-
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-
-      - name: Install Dependencies
+      - name: Install dependencies
         run: npm ci
-
-      - name: Build Electron App
+      - name: Validate release version and identity
+        run: npm run release:check
+      - name: Test
+        run: npm test
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build installer without publishing
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npm run app:build
-
-      # Rename .dmg/.exe to include tag and to fixed name as extra copy
-      - name: Prepare artifacts for release (macOS)
-        if: matrix.os == 'macos-latest'
+        run: npm run app:${{ matrix.platform }}
+      - name: Verify macOS image and application signature
+        if: matrix.platform == 'mac'
         run: |
-          tag="${GITHUB_REF##*/}"
-          for file in release/*.dmg; do
-            [ -e "$file" ] || continue
-            cp "$file" "release/BiBaBenchBuddy-mac-arm64.dmg"
-            mv "$file" "release/BiBaBenchBuddy-${tag}-mac-arm64.dmg"
-          done
-
-      - name: Prepare artifacts for release (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          tag="${GITHUB_REF##*/}"
-          for file in release/*.exe; do
-            [ -e "$file" ] || continue
-            cp "$file" "release/BiBaBenchBuddy-Setup.exe"
-            mv "$file" "release/BiBaBenchBuddy-${tag}-Setup.exe"
-          done
-
-      - name: Upload macOS artifact
-        if: matrix.os == 'macos-latest'
+          hdiutil verify release/*-mac-arm64.dmg
+          codesign --verify --deep --strict --verbose=2 release/mac-arm64/BiBaBenchBuddy.app
+          test "$(lipo -archs release/mac-arm64/BiBaBenchBuddy.app/Contents/MacOS/BiBaBenchBuddy)" = arm64
+      - name: Verify installer and generate platform metadata
+        run: npm run release:metadata -- release ${{ matrix.platform }}
+      - name: Upload versioned installer
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-build-macos
-          path: release/*.dmg
+          name: desktop-${{ matrix.platform }}
+          if-no-files-found: error
+          path: release/${{ matrix.installer }}
 
-      - name: Upload Windows artifact
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: desktop-build-windows
-          path: release/*.exe
-
-  create_release:
+  release_bundle:
     needs: build_release
     runs-on: ubuntu-latest
-
     steps:
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: desktop-build-macos
-          path: release/macos
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+          node-version: 22
+      - uses: actions/download-artifact@v4
         with:
-          name: desktop-build-windows
-          path: release/windows
+          pattern: desktop-*
+          path: release
+          merge-multiple: true
+      - name: Validate both installers and create release metadata
+        run: |
+          npm run release:check
+          npm run release:metadata
+          node --input-type=module -e "import { readFileSync, copyFileSync } from 'node:fs'; const { version } = JSON.parse(readFileSync('package.json')); copyFileSync('docs/releases/' + version + '.md', 'release/RELEASE_NOTES.md')"
+      - name: Upload complete release bundle for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-bundle
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/SHA256SUMS
+            release/release-manifest.json
+            release/RELEASE_NOTES.md
 
-      - name: Create GitHub Release and upload assets
+  create_release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: release_bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-release-bundle
+          path: release
+      - name: Create draft release only for a version tag
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref_name }}
-          generate_release_notes: true
+          draft: true
+          name: BiBaBenchBuddy ${{ github.ref_name }}
+          body_path: release/RELEASE_NOTES.md
+          fail_on_unmatched_files: true
           files: |
-            release/macos/*.dmg
-            release/windows/*.exe
+            release/*.dmg
+            release/*.exe
+            release/SHA256SUMS
+            release/release-manifest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
