@@ -44,15 +44,9 @@ The latest webapp version is accessible in any browser at: **[https://bi-ba-benc
 
 ### Desktop App [Download app ↗](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases)
 
-For a standalone experience with native performance download the latest release for **[macOS](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest/download/BiBaBenchBuddy-mac-arm64.dmg)** or **[Windows](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest/download/BiBaBenchBuddy-Setup.exe)**
+Download the versioned macOS (Apple Silicon) DMG or Windows x64 installer from the [latest published release](https://github.com/DaphneHoutackers/BiBaBenchBuddy/releases/latest).
 
-If you see the warning "BiBaBenchBuddy.app is damaged and can’t be opened. You should move it to the Trash" when opening the app for the first time, run the following command in your Terminal:
-
-```bash
-xattr -cr "/Applications/BiBaBenchBuddy.app"
-```
-
-After running this, try opening the app again. The warning should now be resolved.
+Desktop updates are manual. Before replacing an existing app, follow the [safe upgrade and backup procedure](docs/releases/2.2.4.md). These certificate-free builds are not Apple-notarized or Microsoft Authenticode-signed; consult that guide if the operating system blocks installation. Do not disable system security protections globally.
 
 ## Usage
 
