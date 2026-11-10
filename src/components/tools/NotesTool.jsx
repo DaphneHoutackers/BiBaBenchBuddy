@@ -1,3 +1,4 @@
+import { escapeHtml, sanitizeNoteHtml, sanitizeNoteSvg, notePreviewText } from '@/lib/notesHtml.js';
 import ViewportPanel from '@/components/shared/ViewportPanel';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useHistory } from '@/context/HistoryContext';
@@ -181,8 +182,7 @@ const NOTE_ICON_MAP = {
 
 const NOTE_ICON_NAMES = Object.keys(NOTE_ICON_MAP);
 
-const exec = (cmd, value = null) => document.execCommand(cmd, false, value);
-const escapeHtml = text => (text || '').replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char]));
+const exec = (cmd, value = null) => document.execCommand(cmd, false, cmd === 'insertHTML' ? sanitizeNoteHtml(value) : value);
 
 function placeCaret(element) {
   const range = document.createRange();
@@ -802,7 +802,7 @@ function applyAlignment({ align, editorRef, onContentChange, onBeforeCommand, ta
 
 function htmlToMarkdown(html, title) {
   const container = document.createElement('div');
-  container.innerHTML = html || '';
+  container.innerHTML = sanitizeNoteHtml(html);
 
   // Transform checklist items
   container.querySelectorAll('ul[data-checklist] li').forEach(li => {
@@ -940,7 +940,7 @@ function FloatingToolbar({ editorRef, onContentChange, onBeforeCommand, lang = '
     const finalUrl = linkUrl.trim().startsWith('http://') || linkUrl.trim().startsWith('https://')
       ? linkUrl.trim()
       : `https://${linkUrl.trim()}`;
-    exec('insertHTML', `<a href="${finalUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkName.trim())}</a>`);
+    exec('insertHTML', `<a href="${escapeHtml(finalUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkName.trim())}</a>`);
     setLinkOpen(false);
     setLinkName('');
     setLinkUrl('');
@@ -1506,7 +1506,7 @@ function Toolbar({ editorRef, onContentChange, lang = 'en', note }) {
     const finalUrl = linkUrl.trim().startsWith('http://') || linkUrl.trim().startsWith('https://')
       ? linkUrl.trim()
       : `https://${linkUrl.trim()}`;
-    exec('insertHTML', `<a href="${finalUrl}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkName.trim())}</a>`);
+    exec('insertHTML', `<a href="${escapeHtml(finalUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(linkName.trim())}</a>`);
     setLinkOpen(false);
     setLinkName('');
     setLinkUrl('');
@@ -1927,11 +1927,11 @@ const renderFolderIcon = (folder, isOpen = false, className = "h-5 w-5") => {
             <span
               className="h-2 w-2 inline-flex items-center justify-center shrink-0 text-white [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full"
               dangerouslySetInnerHTML={{
-                __html: (iconName.startsWith('custom:') ? iconName.slice(7) : iconName)
+                __html: sanitizeNoteSvg((iconName.startsWith('custom:') ? iconName.slice(7) : iconName)
                   .replace(/width="[^"]*"/i, '')
                   .replace(/height="[^"]*"/i, '')
                   .replace(/stroke="[^"]*"/gi, 'stroke="currentColor"')
-                  .replace(/fill="[^"]*"/gi, 'fill="none"')
+                  .replace(/fill="[^"]*"/gi, 'fill="none"'))
               }}
             />
           ) : (
@@ -1966,7 +1966,7 @@ const renderNoteIcon = (iconName, color, className = "h-[19px] w-[19px]") => {
             return (
               <span
                 className="w-3/5 h-3/5 inline-flex items-center justify-center shrink-0 text-white [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full"
-                dangerouslySetInnerHTML={{ __html: cleanedSvg }}
+                dangerouslySetInnerHTML={{ __html: sanitizeNoteSvg(cleanedSvg) }}
               />
             );
           }
@@ -2047,17 +2047,7 @@ function formatHeaderDate(timestamp) {
   }
 }
 
-function getPreviewText(htmlContent) {
-  if (!htmlContent) return '';
-  return htmlContent
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+const getPreviewText = notePreviewText;
 
 function IconColorPopover({ popover, isNl, onClose, onSave }) {
   const popoverRef = useRef(null);
@@ -2209,11 +2199,11 @@ function IconColorPopover({ popover, isNl, onClose, onSave }) {
           <span
             className="h-3.5 w-3.5 inline-flex items-center justify-center shrink-0 [&>svg]:w-full [&>svg]:h-full [&>svg]:max-w-full [&>svg]:max-h-full text-slate-800 dark:text-slate-200"
             dangerouslySetInnerHTML={{
-              __html: (nameOrSvg.startsWith('custom:') ? nameOrSvg.slice(7) : nameOrSvg)
+              __html: sanitizeNoteSvg((nameOrSvg.startsWith('custom:') ? nameOrSvg.slice(7) : nameOrSvg)
                 .replace(/width="[^"]*"/i, '')
                 .replace(/height="[^"]*"/i, '')
                 .replace(/stroke="[^"]*"/gi, 'stroke="currentColor"')
-                .replace(/fill="[^"]*"/gi, 'fill="none"')
+                .replace(/fill="[^"]*"/gi, 'fill="none"'))
             }}
           />
         ) : (
@@ -3144,7 +3134,7 @@ export default function NotesTool({ settings, historyData }) {
     const nextIndex = history.index + (redo ? 1 : -1);
     if (nextIndex < 0 || nextIndex >= history.entries.length) return;
     history.index = nextIndex;
-    editorRef.current.innerHTML = history.entries[nextIndex];
+    editorRef.current.innerHTML = sanitizeNoteHtml(history.entries[nextIndex]);
     syncCheckboxes(editorRef.current);
     editorRef.current.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.checked = cb.hasAttribute('checked') || cb.getAttribute('data-checked') === 'true';
@@ -3161,7 +3151,7 @@ export default function NotesTool({ settings, historyData }) {
 
   useLayoutEffect(() => {
     if (editorRef.current && note) {
-      const content = note.content || '<p><br></p>';
+      const content = sanitizeNoteHtml(note.content || '<p><br></p>');
       editorRef.current.innerHTML = content;
       editorRef.current.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         cb.checked = cb.hasAttribute('checked') || cb.getAttribute('data-checked') === 'true';
@@ -3525,7 +3515,7 @@ export default function NotesTool({ settings, historyData }) {
       try {
         const res = await window.electronAPI.exportNotePdf({
           title: targetNote.title || 'Untitled note',
-          html: targetNote.content || '<p></p>',
+          html: sanitizeNoteHtml(targetNote.content || '<p></p>'),
         });
         if (res?.success || res?.canceled) return;
       } catch (err) {
@@ -3546,7 +3536,7 @@ export default function NotesTool({ settings, historyData }) {
     const doc = iframe.contentWindow?.document || iframe.contentDocument;
     if (!doc) return;
 
-    const contentHtml = targetNote.content || '<p></p>';
+    const contentHtml = sanitizeNoteHtml(targetNote.content || '<p></p>');
 
     doc.open();
     doc.write(`
@@ -4203,7 +4193,7 @@ export default function NotesTool({ settings, historyData }) {
       }
     }
 
-    const html = e.clipboardData?.getData('text/html') || '';
+    const html = sanitizeNoteHtml(e.clipboardData?.getData('text/html') || '');
     const text = e.clipboardData?.getData('text/plain') || '';
 
     // Check if cursor is currently inside an existing table cell
@@ -4317,10 +4307,7 @@ export default function NotesTool({ settings, historyData }) {
 
     e.preventDefault();
     if (html) {
-      const cleanHtml = html
-        .replace(/<meta[^>]*>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<!--[\s\S]*?-->/gi, '');
+      const cleanHtml = sanitizeNoteHtml(html);
       commitHistory('paste');
       exec('insertHTML', cleanHtml);
       saveContent('paste');

@@ -1,3 +1,4 @@
+import { escapeHtml } from '../src/lib/htmlEncoding.js';
 import { app, BrowserWindow, dialog, Menu, shell, ipcMain } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import fs from 'fs';
@@ -481,6 +482,7 @@ ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
     show: false,
     webPreferences: {
       nodeIntegration: false,
+      javascript: false,
       contextIsolation: true,
     },
   });
@@ -490,7 +492,7 @@ ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>${title || 'Note'}</title>
+        <title>${escapeHtml(title || 'Note')}</title>
         <style>
           @page { margin: 20mm; size: A4; }
           body {
@@ -584,7 +586,7 @@ ipcMain.handle('export-note-pdf', async (_event, { title, html }) => {
         </style>
       </head>
       <body>
-        <h1 class="note-title">${title || 'Untitled note'}</h1>
+        <h1 class="note-title">${escapeHtml(title || 'Untitled note')}</h1>
         <div>${html}</div>
       </body>
     </html>
